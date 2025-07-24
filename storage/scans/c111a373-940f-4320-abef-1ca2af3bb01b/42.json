@@ -1,0 +1,104 @@
+{
+  "url": "https://orange-services.de/ssl-zertifikat-website-https",
+  "title": "SSL - Sichere Webseite mit HTTPS | SEO, SEM für Webseiten",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/ssl-zertifikat-website-https",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 12,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/upload/ssl-https.jpg",
+        "alt": "SSL / HTTPS Verschlüsseung für Websites"
+      },
+      {
+        "src": "/sites/default/files/upload/ssl-browser-adressleiste.jpg",
+        "alt": "Darstellung von geschützten Webseiten in Firefox, Microsoft Edge und Google Chrome"
+      },
+      {
+        "src": "/sites/default/files/upload/no-ssl-browser-adressleiste.jpg",
+        "alt": "Nicht geschützte Webseite in Firefox"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-beratung-formular.png",
+        "alt": "Kostenlose Erstberatung"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h3": 4,
+      "h2": 3,
+      "h5": 1
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "SSL Verschlüsselung - Besseres Ranking mit HTTPS"
+      },
+      {
+        "tag": "h3",
+        "text": "Was ist SSL genau?"
+      },
+      {
+        "tag": "h3",
+        "text": "Wie wichtig ist SSL für SEO und das Ranking?"
+      },
+      {
+        "tag": "h3",
+        "text": "Wie erkennt man eine geschützte Website?"
+      },
+      {
+        "tag": "h3",
+        "text": "Wie schützt man eine Webseite mit SSL?"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h5",
+        "text": "Können wir Ihnen - kostenlos und unverbindlich - weiterhelfen?"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      }
+    ],
+    "errors": []
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "url": "https://orange-services.de/google-ads-agentur/muenchen",
+  "title": "Google Ads Agentur München 》 SEO, SEA,Websites & Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/google-ads-agentur/muenchen",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 10,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-160.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-beratung-formular.png",
+        "alt": "Kostenlose Erstberatung"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 7,
+      "h3": 11,
+      "h5": 1,
+      "h4": 5
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Google Ads Kampagnen - mehr Kunden und Reichweite"
+      },
+      {
+        "tag": "h2",
+        "text": "Google Ads Beratung aus München"
+      },
+      {
+        "tag": "h2",
+        "text": "Ihr Vorteil: Google Ads Kampagnen mit Erfolg einsetzen!"
+      },
+      {
+        "tag": "h3",
+        "text": "Alle Leistungen aus einer Hand"
+      },
+      {
+        "tag": "h3",
+        "text": "Maximale Transparenz & Information"
+      },
+      {
+        "tag": "h3",
+        "text": "Kein Risiko für Sie"
+      },
+      {
+        "tag": "h3",
+        "text": "Perfekt kalkulierbar & effizient"
+      },
+      {
+        "tag": "h3",
+        "text": "Kompetenz & Erfolg"
+      },
+      {
+        "tag": "h3",
+        "text": "Conversion Tracking 4.0"
+      },
+      {
+        "tag": "h2",
+        "text": ""
+      }
+    ],
+    "errors": [
+      "1 leere Überschrift(en)"
+    ]
+  }
+}

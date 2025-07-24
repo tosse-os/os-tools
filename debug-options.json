@@ -1,0 +1,13 @@
+{
+  "url": "https://orange-services.de",
+  "checks": [
+    "alt",
+    "status",
+    "heading",
+    "accessibility",
+    "html",
+    "skiplink",
+    "taborder"
+  ],
+  "maxUrls": 100
+}

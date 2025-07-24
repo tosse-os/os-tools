@@ -1,0 +1,75 @@
+{
+  "url": "https://orange-services.de/webhosting-managed-hosting",
+  "title": "Webhosting & Managed Hosting | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/webhosting-managed-hosting",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 5,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://consent.cookiefirst.com/branding/cookiefirst.svg",
+        "alt": "CookieFirst Logo"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/e-commerce/e-commerce-provider-hosting-stuttgart.jpg",
+        "alt": "Webhosting & Managed Hosting"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h2": 3,
+      "h1": 1,
+      "h3": 3
+    },
+    "list": [
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      },
+      {
+        "tag": "h1",
+        "text": "Webhosting & Managed Hosting"
+      },
+      {
+        "tag": "h3",
+        "text": "Den richtigen E-Commerce Hosting-Anbieter auswählen"
+      },
+      {
+        "tag": "h3",
+        "text": "Auch für Google sind Geschwindigkeit und Qualität der Plattform wichtig"
+      },
+      {
+        "tag": "h3",
+        "text": "Ausländische Provider für ausländische Domains"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      }
+    ],
+    "errors": []
+  }
+}

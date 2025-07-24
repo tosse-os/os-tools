@@ -1,0 +1,106 @@
+{
+  "url": "https://orange-services.de/bildlizenzen",
+  "title": "Bildlizenzen | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/bildlizenzen",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 61,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/00/85/49/80/110_F_85498029_epBZSDcned4xpiIZXvbGp0gsRJQuHY9m.jpg",
+        "alt": "Lachende Frau mit verschränkten Armen und blauer Bluse"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/00/85/49/80/500_F_85498029_epBZSDcned4xpiIZXvbGp0gsRJQuHY9m.jpg",
+        "alt": "#85498029"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/00/85/49/80/110_F_85498029_epBZSDcned4xpiIZXvbGp0gsRJQuHY9m.jpg",
+        "alt": "#85498029"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/01/06/14/94/110_F_106149436_KOhREeJdCMT60bLkxGlh98zqhIuUCbVN.jpg",
+        "alt": "Female customer support operator with headset and smiling"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/01/06/14/94/500_F_106149436_KOhREeJdCMT60bLkxGlh98zqhIuUCbVN.jpg",
+        "alt": "#106149436"
+      },
+      {
+        "src": "https://t1.ftcdn.net/jpg/01/06/14/94/110_F_106149436_KOhREeJdCMT60bLkxGlh98zqhIuUCbVN.jpg",
+        "alt": "#106149436"
+      },
+      {
+        "src": "https://t2.ftcdn.net/jpg/00/94/73/01/110_F_94730104_k8JQ9aBwdFHdQiG0beilYalo4CNg4wgf.jpg",
+        "alt": "sympathischer jurist mit einem ordner in der hand"
+      },
+      {
+        "src": "https://t2.ftcdn.net/jpg/01/08/63/29/110_F_108632987_XUpUK2yexoDre3hHca0oD3UQ7ncWe3r1.jpg",
+        "alt": "group of smiling businesspeople meeting in office"
+      },
+      {
+        "src": "https://t2.ftcdn.net/jpg/00/65/27/05/110_F_65270510_cjOaDhpcupl6CHV0ME7AekwmXM8uIgYl.jpg",
+        "alt": "Flat modern website analytics search engine optimization vector"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 60
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Bildlizenzen"
+      },
+      {
+        "tag": "h2",
+        "text": "Übersicht der verwendeten Fotolia-Lizenzen"
+      },
+      {
+        "tag": "h2",
+        "text": "#85498029 - Lachende Frau mit verschränkten Armen und blauer Bluse"
+      },
+      {
+        "tag": "h2",
+        "text": "Lachende Frau mit verschränkten Armen und blauer Bluse"
+      },
+      {
+        "tag": "h2",
+        "text": "#106149436 - Female customer support operator with headset and smiling"
+      },
+      {
+        "tag": "h2",
+        "text": "Female customer support operator with headset and smiling"
+      },
+      {
+        "tag": "h2",
+        "text": "sympathischer jurist mit einem ordner in der hand"
+      },
+      {
+        "tag": "h2",
+        "text": "group of smiling businesspeople meeting in office"
+      },
+      {
+        "tag": "h2",
+        "text": "Flat modern website analytics search engine optimization vector"
+      },
+      {
+        "tag": "h2",
+        "text": "blue graph and chart reports on office table"
+      }
+    ],
+    "errors": []
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "url": "https://orange-services.de/suchmaschinen-fuer-den-erfolg-im-e-commerce",
+  "title": "Suchmaschinen für Erfolg im E-Commerce | SEO, SEM für Websites",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/suchmaschinen-fuer-den-erfolg-im-e-commerce",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 6,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/suchmaschinen/suchmaschinen-google-suchmaschinenoptimierung-seo.jpg",
+        "alt": "Suchmaschinen in Deutschland"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/suchmaschinen/googlelogo_color_272x92dp.png",
+        "alt": "Google Suchmaschine"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 4,
+      "h3": 2,
+      "h4": 4
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Suchmaschinen für den Erfolg im E-Commerce"
+      },
+      {
+        "tag": "h2",
+        "text": "Mehr als 80% aller Internetnutzer starten über eine Suchmaschine."
+      },
+      {
+        "tag": "h3",
+        "text": "Suchmaschinen und ihre Marktanteile in Deutschland 2020"
+      },
+      {
+        "tag": "h4",
+        "text": "Mobil"
+      },
+      {
+        "tag": "h4",
+        "text": "Desktop / Laptop"
+      },
+      {
+        "tag": "h3",
+        "text": "Suchmaschinen und ihre Marktanteile weltweit 2020"
+      },
+      {
+        "tag": "h4",
+        "text": "Mobil"
+      },
+      {
+        "tag": "h4",
+        "text": "Desktop / Laptop"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      }
+    ],
+    "errors": []
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "url": "https://orange-services.de/suchmaschinenmarketing-sem",
+  "title": "Suchmaschinenmarketing - SEM | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/suchmaschinenmarketing-sem",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 12,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-160.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/suchmaschinen/suchmaschinen-analyse-google-analytics.jpg",
+        "alt": "Suchmachinenmarketing für Websites und Webshops"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-beratung-formular.png",
+        "alt": "Kostenlose Erstberatung"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 4,
+      "h5": 1
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Suchmaschinenmarketing"
+      },
+      {
+        "tag": "h2",
+        "text": "Das optimale Marketing-Konzept für Ihr Webseite"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h5",
+        "text": "Können wir Ihnen - kostenlos und unverbindlich - weiterhelfen?"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      }
+    ],
+    "errors": []
+  }
+}

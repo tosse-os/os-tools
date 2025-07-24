@@ -1,0 +1,54 @@
+{
+  "url": "https://orange-services.de/cookie",
+  "title": "Cookie-Erklärung | Responsive Webdesign, SEO und Webseiten",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/cookie",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 3,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 3
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Cookie-Erklärung"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": []
+  }
+}

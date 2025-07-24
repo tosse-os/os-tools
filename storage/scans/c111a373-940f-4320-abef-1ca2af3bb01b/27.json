@@ -1,0 +1,83 @@
+{
+  "url": "https://orange-services.de/entwicklung-von-webapps",
+  "title": "Entwicklung / Programmierung Webapps | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/entwicklung-von-webapps",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 7,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-160.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/suchmaschinen/software-development-apps-entwicklung-stuttgart-esslingen.jpg",
+        "alt": "Webapps, Apps im Raum München und Stuttgart"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 5,
+      "h3": 1
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Entwicklung von Webapps"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir entwickeln für Sie individuelle Webanwendungen"
+      },
+      {
+        "tag": "h3",
+        "text": "Entwicklung von individuellen Webservices"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": []
+  }
+}

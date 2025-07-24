@@ -1,0 +1,82 @@
+{
+  "url": "https://orange-services.de/barrierefreiheitsstaerkungsgesetz-barrierefreiheitsgesetz-bfsg-websites-ab-2025",
+  "title": "Barrierefreiheitsstärkungsgesetz (BFSG) für Websites ab 2025 - Agentur München | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/barrierefreiheitsstaerkungsgesetz-barrierefreiheitsgesetz-bfsg-websites-ab-2025",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 3,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 2,
+      "h2": 10,
+      "h3": 11
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Barrierefreiheitsstärkungsgesetz (BFSG) für Websites ab 2025  - Agentur München"
+      },
+      {
+        "tag": "h1",
+        "text": "Das BFSG tritt in Kraft - Ist Ihre Website barrierefrei - Sie suchen eine Agentur?"
+      },
+      {
+        "tag": "h2",
+        "text": "Was ist das Barrierefreiheitsstärkungsgesetz (BFSG)?"
+      },
+      {
+        "tag": "h2",
+        "text": "Für wen gilt das BFSG?"
+      },
+      {
+        "tag": "h2",
+        "text": "Diese Anforderungen müssen Websites erfüllen"
+      },
+      {
+        "tag": "h2",
+        "text": "Gesetzliche Grundlagen und Pflichten für barrierefreie Websites"
+      },
+      {
+        "tag": "h3",
+        "text": "Was ist der European Accessibility Act?"
+      },
+      {
+        "tag": "h3",
+        "text": "Was ist das Barrierefreiheitsstärkungsgesetz?"
+      },
+      {
+        "tag": "h3",
+        "text": "Was ist die Norm EN 301 549?"
+      },
+      {
+        "tag": "h3",
+        "text": "Was ist die Barrierefreie Informationstechnologie-Verordnung?"
+      }
+    ],
+    "errors": [
+      "Mehr als eine H1 gefunden",
+      "1 leere Überschrift(en)"
+    ]
+  }
+}

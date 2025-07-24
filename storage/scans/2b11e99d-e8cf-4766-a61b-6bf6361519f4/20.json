@@ -1,0 +1,75 @@
+{
+  "url": "https://orange-services.de/weiterfuehrende-informationen",
+  "title": "Weiterführende Informationen | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/weiterfuehrende-informationen",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 8,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-beratung-formular.png",
+        "alt": "Kostenlose Erstberatung"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h5": 1,
+      "h2": 2
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Weiterführende Informationen"
+      },
+      {
+        "tag": "h5",
+        "text": "Können wir Ihnen - kostenlos und unverbindlich - weiterhelfen?"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      }
+    ],
+    "errors": []
+  }
+}

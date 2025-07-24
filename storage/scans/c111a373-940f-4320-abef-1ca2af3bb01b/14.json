@@ -1,0 +1,92 @@
+{
+  "url": "https://orange-services.de/kontakt",
+  "title": "Orange Services - Webagentur | SEO / SEM / Webdesign",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/kontakt",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 8,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/page-titles/contact-page-title.png",
+        "alt": "contact page title image"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 2,
+      "h2": 6
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Für Fragen oder Informationen kommen Sie einfach auf uns zu. Wir freuen uns auf Ihre Anfragen."
+      },
+      {
+        "tag": "h2",
+        "text": "Sie sind hier"
+      },
+      {
+        "tag": "h1",
+        "text": "Wie können wir helfen?"
+      },
+      {
+        "tag": "h2",
+        "text": "Wie können wir helfen?"
+      },
+      {
+        "tag": "h2",
+        "text": "Beratung kostenlos & unverbindlich"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": [
+      "Mehr als eine H1 gefunden"
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "url": "https://orange-services.de/bot-traffic-woher-und-wie-verhindern",
+  "title": "Bot-Traffic - Woher und wie verhindern? | SEO, SEM und Webseiten",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/bot-traffic-woher-und-wie-verhindern",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 7,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/upload/spam-traffic-bot.jpg",
+        "alt": "Bot-Traffic.icu in Google Analytics"
+      },
+      {
+        "src": "/sites/default/files/upload/google-analytics-bots-herausfiltern.png",
+        "alt": "Bot-Traffic.icu in Google Analytics"
+      },
+      {
+        "src": "/sites/default/files/upload/bot-traffic-google-analytics.png",
+        "alt": "Bot-Traffic.icu in Google Analytics"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h3": 2,
+      "h2": 4
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Bot-Traffic - Woher und wie verhindern?"
+      },
+      {
+        "tag": "h3",
+        "text": "Woher kommt dieser Traffic überhaupt?"
+      },
+      {
+        "tag": "h3",
+        "text": "Was gegen Bot-Traffic (Spam) in Google Analytics tun?"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": []
+  }
+}

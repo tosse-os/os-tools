@@ -1,0 +1,109 @@
+{
+  "url": "https://orange-services.de/user-experience",
+  "title": "User Experience im Web | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/user-experience",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 11,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/upload/user-experience.png",
+        "alt": "Kompletter Verlauf der User Experience"
+      },
+      {
+        "src": "/sites/default/files/upload/user-experience-and-conversion.png",
+        "alt": "7 Ebenen der Page Experience & Conversion"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-beratung-formular.png",
+        "alt": "Kostenlose Erstberatung"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix.png",
+        "alt": "Sistrix Zertifikat"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 4,
+      "h3": 1,
+      "h4": 6,
+      "h5": 1
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "User Experience"
+      },
+      {
+        "tag": "h2",
+        "text": "Was ist UX und welche Relevanz hat sie für SEO?"
+      },
+      {
+        "tag": "h3",
+        "text": "Elemente der User Experience"
+      },
+      {
+        "tag": "h4",
+        "text": "Relevanz"
+      },
+      {
+        "tag": "h4",
+        "text": "Vertrauen"
+      },
+      {
+        "tag": "h4",
+        "text": "Orientierung"
+      },
+      {
+        "tag": "h4",
+        "text": "Stimulanz"
+      },
+      {
+        "tag": "h4",
+        "text": "Sicherheit"
+      },
+      {
+        "tag": "h4",
+        "text": "Komfort"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      }
+    ],
+    "errors": []
+  }
+}

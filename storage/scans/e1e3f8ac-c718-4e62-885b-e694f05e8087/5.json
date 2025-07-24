@@ -1,0 +1,111 @@
+{
+  "url": "https://orange-services.de/seo-agentur/muenchen",
+  "title": "SEO Agentur München » Kompetent, Zuverlässig & Transparent",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/seo-agentur/muenchen",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 18,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-160.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/seo-sem/os-google-reviews-logo-2.png",
+        "alt": "Google Bewertungen für Orange Services"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/ACg8ocKx3vvrGCs3761MrW-zf-ZihpiDRRYy-ZzL5DPkx2_7sPSwdg=s38-c-rp-mo-br100",
+        "alt": "Thomas Schubert"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjV83sVe6ZLpPSLKzocOASyqebhaxZ29fC4lX7ofD5iHyMWgLL6a=s38-c-rp-mo-br100",
+        "alt": "Peter von Philipsborn"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjXOQuQgcUTaZkJ5pJ-OnjcO80F5UoJTJww02UpDx0zjmUvdPK0=s38-c-rp-mo-br100",
+        "alt": "LGI Herrenberg"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjULYgaFEoUcm_6DDkspzBj2al3wLLicznIL9PSYtKY56XM=s40-c-rp-mo-br100",
+        "alt": "Daniel Seeger"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/AATXAJwqql7WNiLIDomul3WdwO7XoEzQESjKS6MUcwwK=s40-c-c0x00000000-cc-rp-mo-br100",
+        "alt": "TechProtect GmbH"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/AATXAJwwzyyVPIaYnFdVwGE17tIcIKxI1WQrTXIvq5SP=s40-c-c0x00000000-cc-rp-mo-br100",
+        "alt": "Heiner Breibeck"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 11,
+      "h3": 7,
+      "h5": 1,
+      "h4": 10
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "SEO München: Professionelle Suchmaschinenoptimierung"
+      },
+      {
+        "tag": "h2",
+        "text": "SEO-Optimierung für kleine und mittelständische Unternehmen"
+      },
+      {
+        "tag": "h2",
+        "text": "SEO Agentur München - unsere Leistungen:"
+      },
+      {
+        "tag": "h2",
+        "text": "Sie wünschen eine unverbindliche SEO-Beratung?"
+      },
+      {
+        "tag": "h3",
+        "text": "SEO Beratung & Strategie"
+      },
+      {
+        "tag": "h3",
+        "text": "OnPage SEO"
+      },
+      {
+        "tag": "h3",
+        "text": "OffPage SEO"
+      },
+      {
+        "tag": "h3",
+        "text": "Keywords Recherche & Content-Erstellung"
+      },
+      {
+        "tag": "h3",
+        "text": "Analyse & Reporting"
+      },
+      {
+        "tag": "h3",
+        "text": "Local SEO"
+      }
+    ],
+    "errors": [
+      "1 leere Überschrift(en)"
+    ]
+  }
+}

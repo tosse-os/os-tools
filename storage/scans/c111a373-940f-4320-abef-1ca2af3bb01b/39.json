@@ -1,0 +1,75 @@
+{
+  "url": "https://orange-services.de/auswertung-analyse-der-kampagnen-und-besucherstroeme",
+  "title": "Auswertung & Analyse der Kampagnen und Besucherströme | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/auswertung-analyse-der-kampagnen-und-besucherstroeme",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 5,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/suchmaschinen/google-analytics-marketing-suchmaschinenmarketing-kennzahlen.jpg",
+        "alt": "Auswertung & Analyse der Kampagnen "
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/webseiten/seo-sem-esslingen-kontakt.jpg",
+        "alt": "Sie möchten sich beraten lassen? Rufen Sie einfach an (0157) 8679 8645"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h2": 5,
+      "h3": 1
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Auswertung & Analyse der Kampagnen und Besucherströme"
+      },
+      {
+        "tag": "h2",
+        "text": "Wichtige Kennzahlen erarbeiten und erfolgreich reagieren"
+      },
+      {
+        "tag": "h3",
+        "text": "Landing Pages & Usability für Produktseiten"
+      },
+      {
+        "tag": "h2",
+        "text": "Leistungen"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": []
+  }
+}

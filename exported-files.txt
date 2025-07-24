@@ -1,0 +1,424 @@
+===== resources/views/multiscan/live.blade.php =====
+
+@extends('layouts.app')
+
+@section('content')
+<form id="live-scan-form" class="mb-6 flex gap-2 items-center">
+  <input type="url" name="url" required placeholder="https://example.com" value="https://orange-services.de"
+    class="flex-1 border border-gray-300 px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-orange-500">
+  <button type="submit"
+    class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition">
+    Scan starten
+  </button>
+</form>
+
+<div class="flex items-center gap-2 mb-4">
+  <h1 class="text-xl font-bold">Live-Scan</h1>
+  <svg id="scan-spinner" class="animate-spin h-5 w-5 text-orange-600 hidden" viewBox="0 0 24 24" fill="none">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+  </svg>
+</div>
+
+<div id="scan-progress" class="mb-4 text-sm text-gray-700">
+  <span id="progress-text">Noch kein Scan gestartet.</span>
+</div>
+
+<div class="overflow-x-auto bg-white shadow-sm rounded">
+  <table class="min-w-full text-sm border-collapse" id="result-table">
+    <thead class="bg-gray-100 text-left">
+      <tr>
+        <th class="p-2 border-b">#</th>
+        <th class="p-2 border-b">URL</th>
+        <th class="p-2 border-b">Status</th>
+        <th class="p-2 border-b">ALT</th>
+        <th class="p-2 border-b">Headings</th>
+        <th class="p-2 border-b">Fehler</th>
+      </tr>
+    </thead>
+    <tbody class="text-sm text-gray-800" id="result-body">
+    </tbody>
+  </table>
+</div>
+@endsection
+
+@section('scripts')
+<script>
+  const form = document.getElementById('live-scan-form');
+  const spinner = document.getElementById('scan-spinner');
+  const progressEl = document.getElementById('progress-text');
+  const tbody = document.getElementById('result-body');
+
+  let scanId = null;
+  let currentIndex = 0;
+  let pollingInterval = null;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = form.url.value;
+
+    tbody.innerHTML = '';
+    currentIndex = 0;
+    progressEl.textContent = 'Scan gestartet...';
+    spinner.classList.remove('hidden');
+
+    const res = await fetch("{{ route('scan.start') }}", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+      },
+      body: JSON.stringify({
+        url
+      })
+    });
+
+    const data = await res.json();
+    if (!data.scanId) return;
+
+    scanId = data.scanId;
+    startPolling();
+  });
+
+  function startPolling() {
+    pollingInterval = setInterval(async () => {
+      try {
+        const progressRes = await fetch(`/scan/${scanId}/progress?ts=${Date.now()}`);
+        const progress = await progressRes.json();
+
+        if (!progress || typeof progress.current !== 'number') return;
+
+        progressEl.textContent = `Scanne Seite ${progress.current} / ${progress.total}`;
+
+        while (currentIndex < progress.current) {
+          const res = await fetch(`/scan/${scanId}/result/${currentIndex}`);
+          if (!res.ok) break;
+          const row = await res.json();
+
+          const altErrors = row.altCheck?.altMissing ?? '–';
+          const headingCount = Array.isArray(row.headingCheck?.list) ? row.headingCheck.list.length : 0;
+          const headingErrors = row.headingCheck?.errors?.join(', ') ?? '';
+          const errorDisplay = row.error ?? headingErrors ?? '–';
+
+          const tr = document.createElement('tr');
+          tr.className = 'border-b hover:bg-gray-50';
+
+          tr.innerHTML = `
+            <td class="p-2">${currentIndex + 1}</td>
+            <td class="p-2 break-all"><a href="${row.url}" class="text-orange-600 hover:underline" target="_blank">${row.url}</a></td>
+            <td class="p-2">${row.statusCheck?.status ?? '–'}</td>
+            <td class="p-2">${altErrors} Fehler</td>
+            <td class="p-2">${headingCount} Überschriften</td>
+            <td class="p-2 text-red-600 font-medium">${errorDisplay}</td>
+          `;
+          tbody.appendChild(tr);
+          currentIndex++;
+        }
+
+        if (progress.status === 'done' && currentIndex >= progress.total) {
+          clearInterval(pollingInterval);
+          spinner.classList.add('hidden');
+          progressEl.textContent = '✅ Scan abgeschlossen';
+        }
+      } catch (err) {
+        console.error('Polling-Fehler:', err);
+      }
+    }, 1000);
+  }
+</script>
+@endsection
+
+
+
+===== app/Http/Controllers/ScanController.php =====
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\Scan;
+use App\Jobs\RunScan;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
+
+
+class ScanController extends Controller
+{
+    public function form()
+    {
+        return view('multiscan.live');// /multiscan/live.blade.php
+    }
+
+    public function start(Request $request)
+    {
+        $request->validate([
+            'url' => 'required|url'
+        ]);
+
+        $scan = Scan::create([
+            'id' => (string) Str::uuid(),
+            'url' => $request->url,
+            'status' => 'queued'
+        ]);
+
+        RunScan::dispatch($scan->id);
+
+        return response()->json(['scanId' => $scan->id]);
+    }
+
+    public function progress(Scan $scan)
+    {
+        $path = storage_path("scans/{$scan->id}");
+        $files = File::exists($path) ? File::files($path) : [];
+        $current = count($files);
+
+        return response()->json([
+            'status' => 'running',
+            'current' => $current,
+            'total' => $scan->results_expected ?? 11, // optional: set maxPages beim Start
+            'url' => null
+        ]);
+    }
+
+    public function result(Scan $scan, $index)
+    {
+        $file = storage_path("scans/{$scan->id}/{$index}.json");
+
+        if (!File::exists($file)) {
+            return response()->json([]);
+        }
+
+        $json = File::get($file);
+        return response()->json(json_decode($json, true));
+    }
+
+    public function index()
+    {
+        $scans = Scan::latest()->get(); // später: ->where('user_id', auth()->id())
+        return view('scans.index', compact('scans'));
+    }
+    public function show(Scan $scan)
+    {
+        return view('scans.show', compact('scan'));
+    }
+}
+
+
+
+===== app/Jobs/RunScan.php =====
+
+<?php
+
+namespace App\Jobs;
+
+use App\Models\Scan;
+use App\Models\ScanResult;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Config;
+
+class RunScan implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public string $scanId;
+
+    public function __construct(string $scanId)
+    {
+        $this->scanId = $scanId;
+    }
+
+    public function handle(): void
+    {
+
+        $scan = Scan::findOrFail($this->scanId);
+
+        $scan->update(['status' => 'running']);
+
+        $maxPages = Config::get('tools.limits.max_urls_per_scan', 20); // fallback 20
+
+        $options = [
+            'url' => $scan->url,
+            'checks' => ['alt', 'status', 'heading'],
+            'maxPages' => $maxPages,
+        ];
+
+        $process = new Process([
+            'node',
+            #base_path('node-scanner/scanner.js'),
+            base_path('node-scanner/multiscanner.js'),
+            json_encode($options),
+            $this->scanId
+        ]);
+
+        $process->setTimeout(120);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            $scan->update(['status' => 'error']);
+            return;
+        }
+
+        $output = $process->getOutput();
+        $results = json_decode($output, true);
+
+        if (!is_array($results)) {
+            $scan->update(['status' => 'invalid']);
+            return;
+        }
+
+        foreach ($results as $row) {
+            ScanResult::create([
+                'scan_id' => $scan->id,
+                'url' => $row['url'] ?? 'undefined',
+                'payload' => $row, // ✅ korrekt nach Migration
+            ]);
+        }
+
+        $scan->update([
+            'status' => 'done',
+            'results_expected' => count($results)
+        ]);
+    }
+}
+
+
+
+===== routes/web.php =====
+
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ScanController;
+use App\Http\Controllers\MultiScanController;
+use Illuminate\Support\Facades\File;
+use Illuminate\Http\Request;
+
+
+Route::get('/', [ScanController::class, 'form'])->name('scan.form');
+
+Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');//form
+Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');//bg scan
+
+Route::get('/scan/{scan}/live', [ScanController::class, 'live'])->name('scan.live');//polling
+
+Route::get('/scan/{scan}/progress', [ScanController::class, 'progress'])->name('scan.progress');//json response
+Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result'])->name('scan.result');
+
+// Views
+Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
+Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
+
+//Exports
+Route::get('/scans/{scan}/export', [\App\Http\Controllers\ScanController::class, 'exportCsv'])->name('scans.export.csv');
+
+//Progress stuff
+
+Route::post('/multiscan/abort', function (Request $request) {
+  $scanId = $request->input('scanId');
+  if (!$scanId) return response()->json(['error' => 'No scanId'], 400);
+
+  File::put(storage_path("app/abort-$scanId.flag"), '');
+  return response()->json(['aborted' => true]);
+});
+
+
+
+===== node-scanner/multiScanner.js =====
+
+const puppeteer = require('puppeteer');
+const altCheck = require('./checks/altCheck');
+const headingCheck = require('./checks/headingCheck');
+const statusCheck = require('./checks/statusCheck');
+const { URL } = require('url');
+const fs = require('fs');
+const path = require('path');
+
+let options;
+try {
+  options = JSON.parse(process.argv[2]);
+} catch (err) {
+  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
+  process.exit(1);
+}
+
+const scanId = process.argv[3];
+const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
+if (!fs.existsSync(resultDir)) {
+  fs.mkdirSync(resultDir, { recursive: true });
+}
+
+(async () => {
+  const browser = await puppeteer.launch({ headless: 'new' });
+  const page = await browser.newPage();
+  const visited = new Set();
+  const queue = [options.url];
+  const maxPages = options.maxPages || 5;
+  let index = 0;
+
+  while (queue.length && index < maxPages) {
+    const url = queue.shift();
+    const normalizedUrl = url.replace(/\/$/, '');
+    if (visited.has(normalizedUrl)) continue;
+    visited.add(normalizedUrl);
+
+    try {
+      await Promise.race([
+        page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Soft timeout exceeded')), 10000))
+      ]);
+
+
+      const result = {
+        url,
+        title: await page.title()
+      };
+
+      if (options.checks.includes('status')) result.statusCheck = await statusCheck(page, url);
+      if (options.checks.includes('alt')) result.altCheck = await altCheck(page);
+      if (options.checks.includes('heading')) result.headingCheck = await headingCheck(page);
+
+      const filePath = path.join(resultDir, `${index}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(result, null, 2));
+      index++;
+
+      const hrefs = await page.$$eval('a[href]', links =>
+        links
+          .map(link => link.getAttribute('href'))
+          .filter(Boolean)
+          .filter(href => !href.startsWith('#'))
+          .filter(href => !href.startsWith('mailto:'))
+          .filter(href => !href.startsWith('tel:'))
+          .filter(href => !href.startsWith('javascript:'))
+          .filter(href => !href.includes('#'))
+      );
+
+      const baseUrl = new URL(url).origin;
+
+      for (const href of hrefs) {
+        try {
+          const absoluteUrl = new URL(href, url);
+          const normalized = absoluteUrl.href.replace(/\/$/, '');
+          if (absoluteUrl.origin === baseUrl && !visited.has(normalized)) {
+            queue.push(normalized);
+          }
+        } catch { continue; }
+      }
+    } catch (err) {
+      const errorResult = { url, error: err.message };
+      const filePath = path.join(resultDir, `${index}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(errorResult, null, 2));
+      index++;
+    }
+  }
+
+  await browser.close();
+})();
+

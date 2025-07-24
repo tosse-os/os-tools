@@ -1,0 +1,63 @@
+{
+  "url": "https://orange-services.de/e-commerce-usability",
+  "title": "E-Commerce & Usability | SEO, SEM,Webseiten und Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/e-commerce-usability",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 4,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/e-commerce/e-commerce-webshop-online-marketing.jpg",
+        "alt": "E-Commerce & Usability"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logo-light.png",
+        "alt": "elvyre professional corporate html5 template"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/proven-expert-2021.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h3": 2,
+      "h2": 2
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "E-Commerce & Usability"
+      },
+      {
+        "tag": "h3",
+        "text": "Ihre Produkte effektiv und erfolgreich online verkaufen"
+      },
+      {
+        "tag": "h3",
+        "text": "Ihren Webshop kommunizieren"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      }
+    ],
+    "errors": []
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "url": "https://orange-services.de/webdesign-agentur/muenchen",
+  "title": "Webdesign Agentur München: Professionelle Websites & Webshops",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/webdesign-agentur/muenchen",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 18,
+    "altMissing": 0,
+    "altEmpty": 1,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-160.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/default/files/images/rubriken/seo-sem/os-google-reviews-logo-2.png",
+        "alt": ""
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/ACg8ocKx3vvrGCs3761MrW-zf-ZihpiDRRYy-ZzL5DPkx2_7sPSwdg=s38-c-rp-mo-br100",
+        "alt": "Thomas Schubert"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjV83sVe6ZLpPSLKzocOASyqebhaxZ29fC4lX7ofD5iHyMWgLL6a=s38-c-rp-mo-br100",
+        "alt": "Peter von Philipsborn"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjXOQuQgcUTaZkJ5pJ-OnjcO80F5UoJTJww02UpDx0zjmUvdPK0=s38-c-rp-mo-br100",
+        "alt": "LGI Herrenberg"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a-/ALV-UjULYgaFEoUcm_6DDkspzBj2al3wLLicznIL9PSYtKY56XM=s40-c-rp-mo-br100",
+        "alt": "Daniel Seeger"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/AATXAJwqql7WNiLIDomul3WdwO7XoEzQESjKS6MUcwwK=s40-c-c0x00000000-cc-rp-mo-br100",
+        "alt": "TechProtect GmbH"
+      },
+      {
+        "src": "https://lh3.googleusercontent.com/a/AATXAJwwzyyVPIaYnFdVwGE17tIcIKxI1WQrTXIvq5SP=s40-c-c0x00000000-cc-rp-mo-br100",
+        "alt": "Heiner Breibeck"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 1,
+      "h3": 12,
+      "h2": 14,
+      "h5": 1,
+      "h4": 6
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Webdesign München: Professionelle Websites"
+      },
+      {
+        "tag": "h3",
+        "text": "Webdesign Agentur aus München für Ihr Projekt:"
+      },
+      {
+        "tag": "h2",
+        "text": "Was ist gutes Webdesign?"
+      },
+      {
+        "tag": "h2",
+        "text": "Preise für gängige Webdesign-Projekte*"
+      },
+      {
+        "tag": "h2",
+        "text": "Paket Basis"
+      },
+      {
+        "tag": "h2",
+        "text": "Paket Business"
+      },
+      {
+        "tag": "h2",
+        "text": "Paket Pro"
+      },
+      {
+        "tag": "h2",
+        "text": "Paket Enterprise"
+      },
+      {
+        "tag": "h2",
+        "text": "Nicht das passende Webdesign-Paket gefunden?"
+      },
+      {
+        "tag": "h2",
+        "text": "Webdesign aus München: Sie suchen, wir bieten."
+      }
+    ],
+    "errors": []
+  }
+}

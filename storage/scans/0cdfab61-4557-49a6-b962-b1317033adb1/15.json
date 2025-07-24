@@ -1,0 +1,101 @@
+{
+  "url": "https://orange-services.de/kostenlose-seo-analyse",
+  "title": "Orange Services - Suchmaschinenoptimierung (SEO) - Beratung",
+  "statusCheck": {
+    "status": 200,
+    "redirected": false,
+    "finalUrl": "https://orange-services.de/kostenlose-seo-analyse",
+    "error": null
+  },
+  "altCheck": {
+    "imageCount": 13,
+    "altMissing": 0,
+    "altEmpty": 0,
+    "preview": [
+      {
+        "src": "https://orange-services.de/sites/default/files/logos/orange-services-esslingen-logo-256_0.png",
+        "alt": "Start"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven-c.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert-c.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/google-reviews-c.png",
+        "alt": "Google Bewertungen"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/sistrix-c.png",
+        "alt": "Sistrix Zertifikat"
+      },
+      {
+        "src": "/sites/default/files/upload/kostenlose-seo-analyse-formular.png",
+        "alt": "Kostenlose Erstanalyse Ihrer Webseite"
+      },
+      {
+        "src": "https://images.provenexpert.com/b5/12/b8678c6f37eec336fc83c40793c0/widget_portrait_110_de_0.png",
+        "alt": "Erfahrungen & Bewertungen zu Orange Services"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/5-sterne-proven.png",
+        "alt": "ProvenExpert Rating"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/100-prozent-expert.png",
+        "alt": "ProvenExpert 100%"
+      },
+      {
+        "src": "/sites/all/themes/elvyre/img/logos/ry-experte.png",
+        "alt": "Ryte Expert"
+      }
+    ]
+  },
+  "headingCheck": {
+    "count": {
+      "h1": 2,
+      "h5": 3,
+      "h2": 3
+    },
+    "list": [
+      {
+        "tag": "h1",
+        "text": "Mehr Kunden und Steigerung des Umsatzes. Wir beraten Sie gerne."
+      },
+      {
+        "tag": "h1",
+        "text": "Kostenlose SEO-Erstanalyse"
+      },
+      {
+        "tag": "h5",
+        "text": "Welche Website sollen wir überprüfen?"
+      },
+      {
+        "tag": "h5",
+        "text": "Wie können wir Sie erreichen?"
+      },
+      {
+        "tag": "h5",
+        "text": "Ihre Mitteilung an uns:"
+      },
+      {
+        "tag": "h2",
+        "text": "Aktuelle Inhalte"
+      },
+      {
+        "tag": "h2",
+        "text": "Kontaktinformationen"
+      },
+      {
+        "tag": "h2",
+        "text": "Wir verwenden Cookies"
+      }
+    ],
+    "errors": [
+      "Mehr als eine H1 gefunden"
+    ]
+  }
+}
