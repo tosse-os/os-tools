@@ -21,7 +21,8 @@ class ScanController extends Controller
     public function start(Request $request)
     {
         $request->validate([
-            'url' => 'required|url'
+            'url' => 'required|url',
+            'checks' => 'nullable|array'
         ]);
 
         $scan = Scan::create([
@@ -30,7 +31,12 @@ class ScanController extends Controller
             'status' => 'queued'
         ]);
 
-        RunScan::dispatch($scan->id);
+        Log::debug('🔍 Empfange Checks vom Frontend:', [
+            'checks' => $request->input('checks')
+        ]);
+
+        RunScan::dispatch($scan->id, $request->input('checks', []));
+
 
         return response()->json(['scanId' => $scan->id]);
     }

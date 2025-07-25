@@ -115,11 +115,12 @@
           currentIndex++;
         }
 
-        if (progress.status === 'done' && currentIndex >= progress.total) {
+        if (progress.current >= progress.total) {
           clearInterval(pollingInterval);
           spinner.classList.add('hidden');
           progressEl.textContent = '✅ Scan abgeschlossen';
         }
+
       } catch (err) {
         console.error('Polling-Fehler:', err);
       }
@@ -142,6 +143,7 @@ use App\Jobs\RunScan;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Config;
 
 
 class ScanController extends Controller
@@ -170,15 +172,23 @@ class ScanController extends Controller
 
     public function progress(Scan $scan)
     {
-        $path = storage_path("scans/{$scan->id}");
-        $files = File::exists($path) ? File::files($path) : [];
-        $current = count($files);
+        $path = storage_path("scans/{$scan->id}/progress.json");
+
+        if (!File::exists($path)) {
+            return response()->json([
+                'status' => 'initializing',
+                'current' => 0,
+                'total' => Config::get('tools.limits.max_urls_per_scan', 10)
+            ]);
+        }
+
+        $content = File::get($path);
+        $json = json_decode($content, true);
 
         return response()->json([
             'status' => 'running',
-            'current' => $current,
-            'total' => $scan->results_expected ?? 11, // optional: set maxPages beim Start
-            'url' => null
+            'current' => $json['current'] ?? 0,
+            'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10)
         ]);
     }
 
@@ -214,14 +224,12 @@ class ScanController extends Controller
 namespace App\Jobs;
 
 use App\Models\Scan;
-use App\Models\ScanResult;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Config;
 
 class RunScan implements ShouldQueue
@@ -237,12 +245,11 @@ class RunScan implements ShouldQueue
 
     public function handle(): void
     {
-
         $scan = Scan::findOrFail($this->scanId);
 
         $scan->update(['status' => 'running']);
 
-        $maxPages = Config::get('tools.limits.max_urls_per_scan', 20); // fallback 20
+        $maxPages = Config::get('tools.limits.max_urls_per_scan', 6);
 
         $options = [
             'url' => $scan->url,
@@ -252,40 +259,16 @@ class RunScan implements ShouldQueue
 
         $process = new Process([
             'node',
-            #base_path('node-scanner/scanner.js'),
             base_path('node-scanner/multiscanner.js'),
             json_encode($options),
             $this->scanId
         ]);
 
-        $process->setTimeout(120);
-        $process->run();
+        $process->start(); // ⏱️ Sofortiger Start – ohne Warten auf Output
 
-        if (!$process->isSuccessful()) {
-            $scan->update(['status' => 'error']);
-            return;
-        }
-
-        $output = $process->getOutput();
-        $results = json_decode($output, true);
-
-        if (!is_array($results)) {
-            $scan->update(['status' => 'invalid']);
-            return;
-        }
-
-        foreach ($results as $row) {
-            ScanResult::create([
-                'scan_id' => $scan->id,
-                'url' => $row['url'] ?? 'undefined',
-                'payload' => $row, // ✅ korrekt nach Migration
-            ]);
-        }
-
-        $scan->update([
-            'status' => 'done',
-            'results_expected' => count($results)
-        ]);
+        // Done. Die Ausgabe-Dateien werden durch Node geschrieben.
+        // Wenn du willst, kannst du hier später einen zweiten Job triggern,
+        // der prüft, wann alles fertig ist – z. B. für DB-Eintrag oder Export.
     }
 }
 
@@ -341,6 +324,7 @@ const { URL } = require('url');
 const fs = require('fs');
 const path = require('path');
 
+// === Optionen parsen ===
 let options;
 try {
   options = JSON.parse(process.argv[2]);
@@ -355,68 +339,114 @@ if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true });
 }
 
+// === URL-Normalisierung ===
+function normalizeUrl(raw, base = '') {
+  try {
+    const url = new URL(raw, base);
+    url.hash = '';
+    url.search = '';
+    return url.href.replace(/\/+$/, ''); // am Ende Slash(es) entfernen
+  } catch {
+    return null;
+  }
+}
+
 (async () => {
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const browser = await puppeteer.launch({ headless: true });
+  const maxPages = options.maxPages || 20;
+  const maxConcurrency = 3;
+
+  // === Schritt 1: Startseite laden, Links sammeln ===
   const page = await browser.newPage();
-  const visited = new Set();
-  const queue = [options.url];
-  const maxPages = options.maxPages || 5;
+  await page.setRequestInterception(true);
+  page.on('request', (req) => {
+    const type = req.resourceType();
+    if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
+
+  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+  let hrefs = await page.$$eval('a[href]', links =>
+    links
+      .map(link => link.getAttribute('href'))
+      .filter(Boolean)
+      .filter(href => !href.startsWith('#'))
+      .filter(href => !href.startsWith('mailto:'))
+      .filter(href => !href.startsWith('tel:'))
+      .filter(href => !href.startsWith('javascript:'))
+  );
+
+  const baseUrl = new URL(options.url).origin;
+
+  // Alle URLs absolut + normalisiert
+  let absoluteUrls = hrefs.map(href => normalizeUrl(href, options.url)).filter(Boolean);
+
+  // Startseite zuerst + alles deduplizieren + domain filtern
+  absoluteUrls.unshift(normalizeUrl(options.url));
+  absoluteUrls = [...new Set(absoluteUrls)].filter(url => url && url.startsWith(baseUrl));
+
+  // Begrenzen auf maxPages
+  const queue = absoluteUrls.slice(0, maxPages);
+  await page.close();
+
+  // === Fortschritt initialisieren ===
+  fs.writeFileSync(
+    path.join(resultDir, `progress.json`),
+    JSON.stringify({ current: 0, total: queue.length })
+  );
+
   let index = 0;
 
-  while (queue.length && index < maxPages) {
-    const url = queue.shift();
-    const normalizedUrl = url.replace(/\/$/, '');
-    if (visited.has(normalizedUrl)) continue;
-    visited.add(normalizedUrl);
+  const runTask = async (url) => {
+    const page = await browser.newPage();
 
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    let result;
     try {
-      await Promise.race([
-        page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Soft timeout exceeded')), 10000))
-      ]);
-
-
-      const result = {
-        url,
-        title: await page.title()
-      };
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      result = { url, title: await page.title() };
 
       if (options.checks.includes('status')) result.statusCheck = await statusCheck(page, url);
       if (options.checks.includes('alt')) result.altCheck = await altCheck(page);
       if (options.checks.includes('heading')) result.headingCheck = await headingCheck(page);
 
-      const filePath = path.join(resultDir, `${index}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(result, null, 2));
-      index++;
-
-      const hrefs = await page.$$eval('a[href]', links =>
-        links
-          .map(link => link.getAttribute('href'))
-          .filter(Boolean)
-          .filter(href => !href.startsWith('#'))
-          .filter(href => !href.startsWith('mailto:'))
-          .filter(href => !href.startsWith('tel:'))
-          .filter(href => !href.startsWith('javascript:'))
-          .filter(href => !href.includes('#'))
-      );
-
-      const baseUrl = new URL(url).origin;
-
-      for (const href of hrefs) {
-        try {
-          const absoluteUrl = new URL(href, url);
-          const normalized = absoluteUrl.href.replace(/\/$/, '');
-          if (absoluteUrl.origin === baseUrl && !visited.has(normalized)) {
-            queue.push(normalized);
-          }
-        } catch { continue; }
-      }
     } catch (err) {
-      const errorResult = { url, error: err.message };
-      const filePath = path.join(resultDir, `${index}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(errorResult, null, 2));
-      index++;
+      result = { url, error: err.message };
     }
+
+    fs.writeFileSync(path.join(resultDir, `${index}.json`), JSON.stringify(result, null, 2));
+    index++;
+    fs.writeFileSync(
+      path.join(resultDir, `progress.json`),
+      JSON.stringify({ current: index, total: queue.length })
+    );
+
+    await page.close();
+  };
+
+  // === Seiten parallel abarbeiten ===
+  while (index < queue.length) {
+    const batch = [];
+
+    while (batch.length < maxConcurrency && index + batch.length < queue.length) {
+      const url = queue[index + batch.length];
+      batch.push(runTask(url));
+    }
+
+    await Promise.allSettled(batch);
   }
 
   await browser.close();

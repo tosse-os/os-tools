@@ -14,6 +14,8 @@ try {
   console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
   process.exit(1);
 }
+console.log('📦 Optionen empfangen vom Laravel-Job:', options);
+
 
 const scanId = process.argv[3];
 const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
@@ -100,6 +102,11 @@ function normalizeUrl(raw, base = '') {
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
       result = { url, title: await page.title() };
+
+      if (options.checks.includes('status')) {
+        console.log('✅ Status-Check wird ausgeführt für:', url);
+        result.statusCheck = await statusCheck(page, url);
+      }
 
       if (options.checks.includes('status')) result.statusCheck = await statusCheck(page, url);
       if (options.checks.includes('alt')) result.altCheck = await altCheck(page);

@@ -10,17 +10,21 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 
 class RunScan implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public string $scanId;
+    public array $checks;
 
-    public function __construct(string $scanId)
+    public function __construct(string $scanId, array $checks = [])
     {
         $this->scanId = $scanId;
+        $this->checks = $checks;
     }
+
 
     public function handle(): void
     {
@@ -28,13 +32,16 @@ class RunScan implements ShouldQueue
 
         $scan->update(['status' => 'running']);
 
-        $maxPages = Config::get('tools.limits.max_urls_per_scan', 6);
-
         $options = [
             'url' => $scan->url,
-            'checks' => ['alt', 'status', 'heading'],
-            'maxPages' => $maxPages,
+            'checks' => $this->checks,
+            'maxPages' => config('tools.limits.max_urls_per_scan', 6),
         ];
+
+        Log::debug('🟠 Übergabe an Node-Prozess:', [
+            'scanId' => $this->scanId,
+            'options' => $options
+        ]);
 
         $process = new Process([
             'node',
@@ -42,6 +49,8 @@ class RunScan implements ShouldQueue
             json_encode($options),
             $this->scanId
         ]);
+
+
 
         $process->start(); // ⏱️ Sofortiger Start – ohne Warten auf Output
 
