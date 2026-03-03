@@ -2,11 +2,10 @@ const puppeteer = require('puppeteer');
 const altCheck = require('./checks/altCheck');
 const headingCheck = require('./checks/headingCheck');
 const statusCheck = require('./checks/statusCheck');
-const { URL } = require('url');
+const { collectUniqueUrls } = require('./utils/urlUtils');
 const fs = require('fs');
 const path = require('path');
 
-// === Optionen parsen ===
 let options;
 try {
   options = JSON.parse(process.argv[2]);
@@ -14,8 +13,6 @@ try {
   console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
   process.exit(1);
 }
-console.log('📦 Optionen empfangen vom Laravel-Job:', options);
-
 
 const scanId = process.argv[3];
 const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
@@ -23,24 +20,12 @@ if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true });
 }
 
-// === URL-Normalisierung ===
-function normalizeUrl(raw, base = '') {
-  try {
-    const url = new URL(raw, base);
-    url.hash = '';
-    url.search = '';
-    return url.href.replace(/\/+$/, ''); // am Ende Slash(es) entfernen
-  } catch {
-    return null;
-  }
-}
-
 (async () => {
   const browser = await puppeteer.launch({ headless: true });
   const maxPages = options.maxPages || 20;
   const maxConcurrency = 3;
+  const abortPath = path.resolve(__dirname, '..', 'storage', 'app', `abort-${scanId}.flag`);
 
-  // === Schritt 1: Startseite laden, Links sammeln ===
   const page = await browser.newPage();
   await page.setRequestInterception(true);
   page.on('request', (req) => {
@@ -54,7 +39,7 @@ function normalizeUrl(raw, base = '') {
 
   await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-  let hrefs = await page.$$eval('a[href]', links =>
+  const hrefs = await page.$$eval('a[href]', links =>
     links
       .map(link => link.getAttribute('href'))
       .filter(Boolean)
@@ -64,28 +49,17 @@ function normalizeUrl(raw, base = '') {
       .filter(href => !href.startsWith('javascript:'))
   );
 
-  const baseUrl = new URL(options.url).origin;
-
-  // Alle URLs absolut + normalisiert
-  let absoluteUrls = hrefs.map(href => normalizeUrl(href, options.url)).filter(Boolean);
-
-  // Startseite zuerst + alles deduplizieren + domain filtern
-  absoluteUrls.unshift(normalizeUrl(options.url));
-  absoluteUrls = [...new Set(absoluteUrls)].filter(url => url && url.startsWith(baseUrl));
-
-  // Begrenzen auf maxPages
-  const queue = absoluteUrls.slice(0, maxPages);
+  const absoluteUrls = collectUniqueUrls(options.url, hrefs).slice(0, maxPages);
   await page.close();
 
-  // === Fortschritt initialisieren ===
   fs.writeFileSync(
     path.join(resultDir, `progress.json`),
-    JSON.stringify({ current: 0, total: queue.length })
+    JSON.stringify({ current: 0, total: absoluteUrls.length, status: 'running' })
   );
 
-  let index = 0;
+  let currentIndex = 0;
 
-  const runTask = async (url) => {
+  const runTask = async (url, position) => {
     const page = await browser.newPage();
 
     await page.setRequestInterception(true);
@@ -98,44 +72,79 @@ function normalizeUrl(raw, base = '') {
       }
     });
 
-    let result;
+    let result = { url };
+
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-      result = { url, title: await page.title() };
+      result.title = await page.title();
 
       if (options.checks.includes('status')) {
-        console.log('✅ Status-Check wird ausgeführt für:', url);
         result.statusCheck = await statusCheck(page, url);
       }
 
-      if (options.checks.includes('status')) result.statusCheck = await statusCheck(page, url);
-      if (options.checks.includes('alt')) result.altCheck = await altCheck(page);
-      if (options.checks.includes('heading')) result.headingCheck = await headingCheck(page);
+      if (options.checks.includes('alt')) {
+        result.altCheck = await altCheck(page);
+      }
+
+      if (options.checks.includes('heading')) {
+        result.headingCheck = await headingCheck(page);
+      }
 
     } catch (err) {
-      result = { url, error: err.message };
+      result.error = err.message;
     }
 
-    fs.writeFileSync(path.join(resultDir, `${index}.json`), JSON.stringify(result, null, 2));
-    index++;
+    fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
+
+    const newCurrent = position + 1;
+
     fs.writeFileSync(
       path.join(resultDir, `progress.json`),
-      JSON.stringify({ current: index, total: queue.length })
+      JSON.stringify({
+        current: newCurrent,
+        total: absoluteUrls.length,
+        status: fs.existsSync(abortPath) ? 'aborted' : 'running'
+      })
     );
 
     await page.close();
   };
 
-  // === Seiten parallel abarbeiten ===
-  while (index < queue.length) {
+  while (currentIndex < absoluteUrls.length) {
+
+    if (fs.existsSync(abortPath)) {
+      fs.writeFileSync(
+        path.join(resultDir, `progress.json`),
+        JSON.stringify({
+          current: currentIndex,
+          total: absoluteUrls.length,
+          status: 'aborted'
+        })
+      );
+      break;
+    }
+
     const batch = [];
 
-    while (batch.length < maxConcurrency && index + batch.length < queue.length) {
-      const url = queue[index + batch.length];
-      batch.push(runTask(url));
+    while (batch.length < maxConcurrency && currentIndex < absoluteUrls.length) {
+      const position = currentIndex;
+      const url = absoluteUrls[position];
+      batch.push(runTask(url, position));
+      currentIndex++;
     }
 
     await Promise.allSettled(batch);
+  }
+
+  if (!fs.existsSync(abortPath)) {
+    fs.writeFileSync(
+      path.join(resultDir, `progress.json`),
+      JSON.stringify({
+        current: absoluteUrls.length,
+        total: absoluteUrls.length,
+        status: 'done'
+      })
+    );
   }
 
   await browser.close();

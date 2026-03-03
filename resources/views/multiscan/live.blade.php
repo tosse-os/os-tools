@@ -2,11 +2,12 @@
 
 @section('content')
 <form id="live-scan-form" class="mb-6 flex gap-2 items-center">
-  <input type="url" name="url" required placeholder="https://example.com" value="https://orange-services.de"
+  <input type="url" name="url" required placeholder="https://example.com"
     class="flex-1 border border-gray-300 px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-orange-500">
   <button type="submit"
-    class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition">
-    Scan starten
+    class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition flex items-center gap-2">
+    <span>Scan starten</span>
+    <span id="scan-spinner" class="hidden w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
   </button>
 </form>
 
@@ -14,15 +15,6 @@
   <label><input type="checkbox" class="check-option" value="alt"> ALT-Check</label>
   <label><input type="checkbox" class="check-option" value="heading"> Überschriften</label>
   <label><input type="checkbox" class="check-option" value="status"> HTTP-Status</label>
-</div>
-
-
-<div class="flex items-center gap-2 mb-4">
-  <h1 class="text-xl font-bold">Live-Scan</h1>
-  <svg id="scan-spinner" class="animate-spin h-5 w-5 text-orange-600 hidden" viewBox="0 0 24 24" fill="none">
-    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-  </svg>
 </div>
 
 <div id="abort-section" class="mb-4 hidden">
@@ -47,103 +39,9 @@
         <th class="p-2 border-b">Fehler</th>
       </tr>
     </thead>
-    <tbody class="text-sm text-gray-800" id="result-body">
-    </tbody>
+    <tbody id="result-body"></tbody>
   </table>
 </div>
 @endsection
 
-@section('scripts')
-<script>
-  const form = document.getElementById('live-scan-form');
-  const spinner = document.getElementById('scan-spinner');
-  const abortBtn = document.getElementById('abort-button');
-  const abortSection = document.getElementById('abort-section');
-  const progressEl = document.getElementById('progress-text');
-  const tbody = document.getElementById('result-body');
-  const checks = Array.from(document.querySelectorAll('.check-option:checked')).map(el => el.value);
-
-  let scanId = null;
-  let currentIndex = 0;
-  let pollingInterval = null;
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const url = form.url.value;
-
-    const checks = Array.from(document.querySelectorAll('.check-option:checked')).map(el => el.value); // << HIER
-
-    tbody.innerHTML = '';
-    currentIndex = 0;
-    progressEl.textContent = 'Scan gestartet...';
-    spinner.classList.remove('hidden');
-    abortSection.classList.remove('hidden');
-
-    const res = await fetch("{{ route('scan.start') }}", {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-      },
-      body: JSON.stringify({
-        url,
-        checks // << UND HIER ÜBERGEBEN
-      })
-    });
-
-    const data = await res.json();
-    if (!data.scanId) return;
-
-    scanId = data.scanId;
-    startPolling();
-  });
-
-  function startPolling() {
-    pollingInterval = setInterval(async () => {
-      try {
-        const progressRes = await fetch(`/scan/${scanId}/progress?ts=${Date.now()}`);
-        const progress = await progressRes.json();
-
-        if (!progress || typeof progress.current !== 'number') return;
-
-        progressEl.textContent = `Scanne Seite ${progress.current} / ${progress.total}`;
-
-        while (currentIndex < progress.current) {
-          const res = await fetch(`/scan/${scanId}/result/${currentIndex}`);
-          if (!res.ok) break;
-          const row = await res.json();
-
-          const statusCode = typeof row.statusCheck?.status !== 'undefined' ? row.statusCheck.status : '–';
-          const altErrors = typeof row.altCheck?.altMissing !== 'undefined' ? `${row.altCheck.altMissing} Fehler` : '–';
-          const headingCount = Array.isArray(row.headingCheck?.list) ? `${row.headingCheck.list.length} Überschriften` : '–';
-          const headingErrors = row.headingCheck?.errors?.join(', ') ?? '';
-          const errorDisplay = row.error ?? headingErrors ?? '–';
-
-          const tr = document.createElement('tr');
-          tr.className = 'border-b hover:bg-gray-50';
-
-          tr.innerHTML = `
-            <td class="p-2">${currentIndex + 1}</td>
-            <td class="p-2 break-all"><a href="${row.url}" class="text-orange-600 hover:underline" target="_blank">${row.url}</a></td>
-            <td class="p-2">${row.statusCheck?.status ?? '–'}</td>
-            <td class="p-2">${altErrors}</td>
-            <td class="p-2">${headingCount}</td>
-            <td class="p-2 text-red-600 font-medium">${errorDisplay}</td>
-          `;
-          tbody.appendChild(tr);
-          currentIndex++;
-        }
-
-        if (progress.current >= progress.total) {
-          clearInterval(pollingInterval);
-          spinner.classList.add('hidden');
-          progressEl.textContent = '✅ Scan abgeschlossen';
-        }
-
-      } catch (err) {
-        console.error('Polling-Fehler:', err);
-      }
-    }, 1000);
-  }
-</script>
-@endsection
+@vite(['resources/js/liveScan.js'])

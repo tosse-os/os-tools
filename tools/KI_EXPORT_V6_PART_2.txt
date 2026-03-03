@@ -1,0 +1,443 @@
+      JSON.stringify({
+        current: newCurrent,
+        total: absoluteUrls.length,
+        status: fs.existsSync(abortPath) ? 'aborted' : 'running'
+      })
+    );
+
+    await page.close();
+  };
+
+  while (currentIndex < absoluteUrls.length) {
+
+    if (fs.existsSync(abortPath)) {
+      fs.writeFileSync(
+        path.join(resultDir, `progress.json`),
+        JSON.stringify({
+          current: currentIndex,
+          total: absoluteUrls.length,
+          status: 'aborted'
+        })
+      );
+      break;
+    }
+
+    const batch = [];
+
+    while (batch.length < maxConcurrency && currentIndex < absoluteUrls.length) {
+      const position = currentIndex;
+      const url = absoluteUrls[position];
+      batch.push(runTask(url, position));
+      currentIndex++;
+    }
+
+    await Promise.allSettled(batch);
+  }
+
+  if (!fs.existsSync(abortPath)) {
+    fs.writeFileSync(
+      path.join(resultDir, `progress.json`),
+      JSON.stringify({
+        current: absoluteUrls.length,
+        total: absoluteUrls.length,
+        status: 'done'
+      })
+    );
+  }
+
+  await browser.close();
+})();
+
+
+
+----- node-scanner\scanner.js -----
+
+const puppeteer = require('puppeteer');
+const altCheck = require('./checks/altCheck');
+const headingCheck = require('./checks/headingCheck');
+const statusCheck = require('./checks/statusCheck');
+
+let options;
+try {
+  options = JSON.parse(process.argv[2]);
+} catch (err) {
+  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
+  process.exit(1);
+}
+
+(async () => {
+  const browser = await puppeteer.launch({ headless: 'new' });
+  const page = await browser.newPage();
+
+  const results = [];
+
+  try {
+    await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+
+    const result = {
+      url: options.url,
+      title: await page.title()
+    };
+
+    if (options.checks.includes('status')) {
+      result.statusCheck = await statusCheck(page, options.url);
+      require('fs').writeFileSync('./node-scanner/textstatus.txt', JSON.stringify(result, null, 2));
+    }
+    if (options.checks.includes('alt')) {
+      result.altCheck = await altCheck(page);
+      require('fs').writeFileSync('./node-scanner/textalt.txt', JSON.stringify(result, null, 2));
+    }
+    if (options.checks.includes('heading')) {
+      result.headingCheck = await headingCheck(page);
+    }
+    //require('fs').writeFileSync('./node-scanner/final-data.txt', JSON.stringify(result, null, 2));
+    results.push(result);
+  } catch (e) {
+    results.push({ url: options.url, error: e.message });
+  }
+
+  await browser.close();
+
+// Alte Ausgabe – NICHT GEEIGNET für Laravel-Job
+// for (const row of results) {
+//   console.log(JSON.stringify(row));
+// }
+
+// Neue Ausgabe – genau ein JSON-Array
+console.log(JSON.stringify(results));
+
+})();
+
+
+
+----- node-scanner\utils\urlUtils.js -----
+
+const { URL } = require('url');
+
+function normalizeUrl(raw, base = '') {
+  try {
+    const url = new URL(raw, base);
+    url.hash = '';
+    url.search = '';
+    return decodeURIComponent(url.href).toLowerCase().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function collectUniqueUrls(baseUrl, hrefs) {
+  const seen = new Map();
+  const origin = new URL(baseUrl).origin;
+
+  const add = (original) => {
+    const normalized = normalizeUrl(original, baseUrl);
+    if (normalized && normalized.startsWith(origin) && !seen.has(normalized)) {
+      seen.set(normalized, normalizeUrl(original, baseUrl)); // könnte auch original sein
+    }
+  };
+
+  add(baseUrl);
+
+  for (const href of hrefs) {
+    add(href);
+  }
+
+  return Array.from(seen.values()); // gibt eindeutige Normalformen zurück
+}
+
+module.exports = {
+  normalizeUrl,
+  collectUniqueUrls,
+};
+
+
+=== MODULE: DATABASE ===
+
+
+----- database\.gitignore -----
+
+*.sqlite*
+
+
+
+----- database\database.sqlite -----
+
+
+
+
+----- database\factories\UserFactory.php -----
+
+<?php
+
+namespace Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+/**
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
+ */
+class UserFactory extends Factory
+{
+    /**
+     * The current password being used by the factory.
+     */
+    protected static ?string $password;
+
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'name' => fake()->name(),
+            'email' => fake()->unique()->safeEmail(),
+            'email_verified_at' => now(),
+            'password' => static::$password ??= Hash::make('password'),
+            'remember_token' => Str::random(10),
+        ];
+    }
+
+    /**
+     * Indicate that the model's email address should be unverified.
+     */
+    public function unverified(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'email_verified_at' => null,
+        ]);
+    }
+}
+
+
+
+----- database\seeders\DatabaseSeeder.php -----
+
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\User;
+// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+
+class DatabaseSeeder extends Seeder
+{
+    /**
+     * Seed the application's database.
+     */
+    public function run(): void
+    {
+        // User::factory(10)->create();
+
+        User::factory()->create([
+            'name' => 'Test User',
+            'email' => 'test@example.com',
+        ]);
+    }
+}
+
+
+=== MODULE: TAILWIND CONFIG ===
+
+
+----- tailwind.config.js -----
+
+module.exports = {
+  content: [
+    './resources/views/**/*.blade.php',
+    './resources/js/**/*.js',
+    './resources/css/**/*.css',
+  ],
+  safelist: [
+    'absolute',
+    'animate-spin',
+    'antialiased',
+    'aspect-[335/376]',
+    'bg-blue-600',
+    'bg-gray-100',
+    'bg-gray-400',
+    'bg-gray-50',
+    'bg-green-500',
+    'bg-orange-600',
+    'bg-red-500',
+    'bg-red-600',
+    'bg-white',
+    'border',
+    'border-b',
+    'border-black',
+    'border-collapse',
+    'border-gray-200',
+    'border-gray-300',
+    'border-t',
+    'border-transparent',
+    'break-all',
+    'break-words',
+    'check-option',
+    'delay-300',
+    'divide-gray-100',
+    'divide-gray-200',
+    'divide-y',
+    'duration-750',
+    'flex',
+    'flex-1',
+    'flex-col',
+    'flex-col-reverse',
+    'flex-wrap',
+    'font-bold',
+    'font-medium',
+    'font-semibold',
+    'gap-2',
+    'gap-3',
+    'gap-4',
+    'h-10',
+    'h-16',
+    'h-3',
+    'h-5',
+    'hidden',
+    'inline-block',
+    'inline-flex',
+    'inset-0',
+    'items-center',
+    'items-start',
+    'justify-between',
+    'justify-center',
+    'justify-end',
+    'leading-[20px]',
+    'leading-normal',
+    'list-disc',
+    'max-w-5xl',
+    'max-w-7xl',
+    'max-w-[335px]',
+    'max-w-none',
+    'mb-1',
+    'mb-2',
+    'mb-4',
+    'mb-6',
+    'min-h-screen',
+    'min-w-full',
+    'ml-1',
+    'mr-2',
+    'mt-3',
+    'mt-4',
+    'mt-6',
+    'mx-auto',
+    'opacity-100',
+    'opacity-25',
+    'opacity-75',
+    'overflow-hidden',
+    'overflow-x-auto',
+    'p-2',
+    'p-4',
+    'p-6',
+    'pb-12',
+    'pl-5',
+    'px-2',
+    'px-3',
+    'px-4',
+    'px-5',
+    'py-1',
+    'py-10',
+    'py-2',
+    'py-6',
+    'relative',
+    'rounded',
+    'rounded-bl-lg',
+    'rounded-br-lg',
+    'rounded-full',
+    'rounded-sm',
+    'rounded-t-lg',
+    'shadow',
+    'shadow-sm',
+    'shrink-0',
+    'space-x-1',
+    'space-x-3',
+    'space-x-6',
+    'space-y-1',
+    'space-y-4',
+    'stroke-current',
+    'table-auto',
+    'text-2xl',
+    'text-[13px]',
+    'text-base',
+    'text-blue-600',
+    'text-center',
+    'text-gray-500',
+    'text-gray-600',
+    'text-gray-700',
+    'text-gray-800',
+    'text-gray-900',
+    'text-green-600',
+    'text-left',
+    'text-orange-600',
+    'text-red-600',
+    'text-sm',
+    'text-white',
+    'text-xl',
+    'text-xs',
+    'tracking-wider',
+    'transition',
+    'transition-all',
+    'transition-opacity',
+    'translate-y-0',
+    'underline',
+    'underline-offset-4',
+    'uppercase',
+    'w-3',
+    'w-5',
+    'w-[448px]',
+    'w-auto',
+    'w-full'
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+
+
+=== MODULE: VITE CONFIG ===
+
+
+----- vite.config.js -----
+
+import { defineConfig } from 'vite'
+import laravel from 'laravel-vite-plugin'
+import fs from 'fs'
+
+export default defineConfig({
+    server: {
+        https: {
+            key: fs.readFileSync('C:/laragon/etc/ssl/laragon.key'),
+            cert: fs.readFileSync('C:/laragon/etc/ssl/laragon.crt'),
+        },
+        host: 'os-tools.test',
+    },
+    plugins: [
+        laravel({
+            input: ['resources/css/app.css', 'resources/js/app.js'],
+            refresh: true,
+        }),
+    ],
+})
+
+
+=== DEPENDENCY MAP ===
+
+ScanController
+→ RunScan Job
+→ storage/scans/{scanId}
+
+RunScan
+→ node-scanner/multiScanner.js
+
+multiScanner.js
+→ checks/*
+→ utils/*
+
+Blade Views
+→ Vite
+→ Tailwind

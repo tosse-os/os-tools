@@ -57,7 +57,7 @@ class ScanController extends Controller
         $json = json_decode($content, true);
 
         return response()->json([
-            'status' => 'running',
+            'status' => $json['status'] ?? 'running',
             'current' => $json['current'] ?? 0,
             'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10)
         ]);

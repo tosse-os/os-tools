@@ -1,0 +1,192 @@
+@extends('layouts.app')
+
+@section('content')
+
+@php
+$result = $report->results->first();
+$data = $result?->payload ?? [];
+$modules = config('seo_modules');
+@endphp
+
+<div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
+
+  <div>
+    <h1 class="text-2xl font-semibold mb-4">Local SEO Analyse</h1>
+
+    <div class="space-y-1 text-sm">
+      <div><strong>URL:</strong> {{ $report->url }}</div>
+      <div><strong>Status:</strong> {{ $report->status }}</div>
+      <div><strong>Score:</strong> {{ $report->score }}</div>
+      <div><strong>Rating:</strong> {{ $data['rating']['label'] ?? '-' }}</div>
+    </div>
+  </div>
+
+  @foreach(($modules['dimensions'] ?? []) as $dimensionKey => $dimension)
+
+  <div>
+    <h2 class="text-xl font-semibold mb-2">
+      {{ $dimension['label'] ?? '' }}
+    </h2>
+
+    <p class="text-sm text-gray-600 mb-6">
+      {{ $dimension['description'] ?? '' }}
+    </p>
+
+    <div class="space-y-6">
+
+      @foreach(($data['breakdown'] ?? []) as $key => $item)
+
+      @php
+      $config = $modules[$key] ?? null;
+      @endphp
+
+      @if($config && ($config['dimension'] ?? null) === $dimensionKey)
+
+      @php
+      $percentage = ($item['max'] ?? 0) > 0
+      ? round((($item['score'] ?? 0) / $item['max']) * 100)
+      : 0;
+
+      $barColor = $percentage >= 80
+      ? 'bg-green-500'
+      : ($percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500');
+      @endphp
+
+      <div x-data="{ open: false }" class="border rounded overflow-hidden">
+
+        <button
+          type="button"
+          @click="open = !open"
+          class="w-full flex justify-between items-center p-5 text-left hover:bg-gray-50 transition">
+
+          <div>
+            <div class="font-semibold text-lg">
+              {{ $config['label'] ?? '' }}
+            </div>
+            <div class="text-sm text-gray-600">
+              {{ $config['description'] ?? '' }}
+            </div>
+          </div>
+
+          <div class="flex items-center gap-5">
+            <div class="text-sm font-semibold">
+              {{ $item['score'] ?? 0 }} / {{ $item['max'] ?? 0 }}
+            </div>
+
+            <span
+              class="text-xl transition-transform duration-200"
+              :class="{ 'rotate-180': open }">
+              ▼
+            </span>
+          </div>
+        </button>
+
+        <div class="px-5 pb-4">
+          <div class="w-full bg-gray-200 rounded h-2">
+            <div class="h-2 rounded {{ $barColor }}"
+              style="width: {{ $percentage }}%">
+            </div>
+          </div>
+        </div>
+
+        <div
+          x-show="open"
+          x-transition
+          class="px-5 pb-6 space-y-6 text-sm border-t bg-gray-50">
+
+          <div>
+            <div class="font-medium mb-2">So wird bewertet:</div>
+
+            <ul class="space-y-2">
+
+              @foreach(($config['how_scoring_works'] ?? []) as $rule => $text)
+
+              @php
+              $value = $item['checks'][$rule] ?? null;
+              @endphp
+
+              <li class="flex justify-between items-center">
+
+                <span>{{ $text }}</span>
+
+                @if($value === true)
+                <span class="text-green-600 font-semibold">✔</span>
+                @elseif($value === false)
+                <span class="text-red-600 font-semibold">✘</span>
+                @else
+                <span class="text-gray-400">–</span>
+                @endif
+
+              </li>
+
+              @endforeach
+
+            </ul>
+          </div>
+
+          @if(!empty($item['missing']))
+          <div class="bg-red-50 border-l-4 border-red-500 p-4">
+            <div class="font-medium mb-2">Verbesserung notwendig:</div>
+            <ul class="list-disc ml-5">
+              @foreach($item['missing'] as $missing)
+              <li>{{ $missing }}</li>
+              @endforeach
+            </ul>
+          </div>
+          @endif
+
+          <div class="bg-blue-50 border-l-4 border-blue-500 p-4">
+            <div class="font-medium">Was ist zu tun:</div>
+            <div>{{ $config['how_to_fix'] ?? '' }}</div>
+          </div>
+
+        </div>
+
+      </div>
+
+      @endif
+
+      @endforeach
+
+    </div>
+  </div>
+
+  @endforeach
+
+  <div>
+    <h2 class="text-xl font-semibold mb-4">Handlungsempfehlungen</h2>
+
+    <div class="space-y-4">
+
+      @foreach(($data['priorities'] ?? []) as $priority)
+
+      @php
+      $severityColors = [
+      'high' => 'bg-red-100 border-red-500',
+      'medium' => 'bg-yellow-100 border-yellow-500',
+      'low' => 'bg-green-100 border-green-500',
+      ];
+      @endphp
+
+      <div class="border-l-4 p-4 {{ $severityColors[$priority['severity']] ?? 'bg-gray-100 border-gray-400' }}">
+
+        <div class="font-semibold">
+          {{ $priority['message'] ?? '' }}
+        </div>
+
+        <div class="text-sm text-gray-600">
+          Kategorie: {{ $priority['category'] ?? '-' }} |
+          Priorität: {{ strtoupper($priority['severity'] ?? '-') }}
+        </div>
+
+      </div>
+
+      @endforeach
+
+    </div>
+
+  </div>
+
+</div>
+
+@endsection

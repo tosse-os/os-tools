@@ -1,35 +1,46 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ScanController;
-use App\Http\Controllers\MultiScanController;
-use Illuminate\Support\Facades\File;
-use Illuminate\Http\Request;
+use App\Http\Controllers\CrawlerController;
+use App\Http\Controllers\LocalSeoController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\DashboardController;
 
+Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-Route::get('/', [ScanController::class, 'form'])->name('scan.form');
+/*
+|--------------------------------------------------------------------------
+| CRAWLER REPORT
+|--------------------------------------------------------------------------
+*/
 
-Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');//form
-Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');//bg scan
+Route::get('/crawler', [CrawlerController::class, 'form'])->name('crawler.form');
+Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.start');
 
-Route::get('/scan/{scan}/live', [ScanController::class, 'live'])->name('scan.live');//polling
+/*
+|--------------------------------------------------------------------------
+| LOCAL SEO REPORT (Platzhalter für nächstes Modul)
+|--------------------------------------------------------------------------
+*/
 
-Route::get('/scan/{scan}/progress', [ScanController::class, 'progress'])->name('scan.progress');//json response
-Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result'])->name('scan.result');
+Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
+Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
 
-// Views
-Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
-Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
+/*
+|--------------------------------------------------------------------------
+| REPORT OVERVIEW
+|--------------------------------------------------------------------------
+*/
 
-//Exports
-Route::get('/scans/{scan}/export', [\App\Http\Controllers\ScanController::class, 'exportCsv'])->name('scans.export.csv');
+Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+Route::get('/reports/archive', [ReportController::class, 'archive'])->name('reports.archive');
+Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
 
-//Progress stuff
-
-Route::post('/multiscan/abort', function (Request $request) {
-  $scanId = $request->input('scanId');
-  if (!$scanId) return response()->json(['error' => 'No scanId'], 400);
-
-  File::put(storage_path("app/abort-$scanId.flag"), '');
-  return response()->json(['aborted' => true]);
+Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
+  return response()->json([
+    'status' => $report->status,
+    'score' => $report->score,
+    'started_at' => $report->started_at,
+    'finished_at' => $report->finished_at,
+  ]);
 });
