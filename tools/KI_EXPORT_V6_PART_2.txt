@@ -1,4 +1,3 @@
-      JSON.stringify({
         current: newCurrent,
         total: absoluteUrls.length,
         status: fs.existsSync(abortPath) ? 'aborted' : 'running'
@@ -50,7 +49,7 @@
 
 
 
------ node-scanner\scanner.js -----
+----- node-scanner/scanner.js -----
 
 const puppeteer = require('puppeteer');
 const altCheck = require('./checks/altCheck');
@@ -110,7 +109,7 @@ console.log(JSON.stringify(results));
 
 
 
------ node-scanner\utils\urlUtils.js -----
+----- node-scanner/utils/urlUtils.js -----
 
 const { URL } = require('url');
 
@@ -154,18 +153,13 @@ module.exports = {
 === MODULE: DATABASE ===
 
 
------ database\.gitignore -----
+----- database/.gitignore -----
 
 *.sqlite*
 
 
 
------ database\database.sqlite -----
-
-
-
-
------ database\factories\UserFactory.php -----
+----- database/factories/UserFactory.php -----
 
 <?php
 
@@ -214,7 +208,7 @@ class UserFactory extends Factory
 
 
 
------ database\seeders\DatabaseSeeder.php -----
+----- database/seeders/DatabaseSeeder.php -----
 
 <?php
 
@@ -409,13 +403,6 @@ import laravel from 'laravel-vite-plugin'
 import fs from 'fs'
 
 export default defineConfig({
-    server: {
-        https: {
-            key: fs.readFileSync('C:/laragon/etc/ssl/laragon.key'),
-            cert: fs.readFileSync('C:/laragon/etc/ssl/laragon.crt'),
-        },
-        host: 'os-tools.test',
-    },
     plugins: [
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.js'],

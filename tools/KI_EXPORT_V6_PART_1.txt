@@ -1,7 +1,7 @@
 
 === EXPORT META ===
 
-Total Files Exported: 49
+Total Files Exported: 48
 
 === FILE STRUCTURE ===
 
@@ -32,7 +32,6 @@ app
       PriorityFactory.php
 database
   .gitignore
-  database.sqlite
   factories
     UserFactory.php
   seeders
@@ -98,7 +97,7 @@ queued → running → done → aborted → failed
 === MODULE: HTTP LAYER ===
 
 
------ app\Http\Controllers\Controller.php -----
+----- app/Http/Controllers/Controller.php -----
 
 <?php
 
@@ -111,7 +110,7 @@ abstract class Controller
 
 
 
------ app\Http\Controllers\CrawlerController.php -----
+----- app/Http/Controllers/CrawlerController.php -----
 
 <?php
 
@@ -153,7 +152,7 @@ class CrawlerController extends Controller
 
 
 
------ app\Http\Controllers\DashboardController.php -----
+----- app/Http/Controllers/DashboardController.php -----
 
 <?php
 
@@ -182,7 +181,7 @@ class DashboardController extends Controller
 
 
 
------ app\Http\Controllers\LocalSeoController.php -----
+----- app/Http/Controllers/LocalSeoController.php -----
 
 <?php
 
@@ -230,7 +229,7 @@ class LocalSeoController extends Controller
 
 
 
------ app\Http\Controllers\ReportController.php -----
+----- app/Http/Controllers/ReportController.php -----
 
 <?php
 
@@ -285,7 +284,7 @@ class ReportController extends Controller
 
 
 
------ app\Http\Controllers\ScanController.php -----
+----- app/Http/Controllers/ScanController.php -----
 
 <?php
 
@@ -379,7 +378,7 @@ class ScanController extends Controller
 === MODULE: JOB LAYER ===
 
 
------ app\Jobs\RunLocalSeo.php -----
+----- app/Jobs/RunLocalSeo.php -----
 
 <?php
 
@@ -479,7 +478,7 @@ class RunLocalSeo implements ShouldQueue
 
 
 
------ app\Jobs\RunMultiScan.php -----
+----- app/Jobs/RunMultiScan.php -----
 
 <?php
 
@@ -533,7 +532,7 @@ class RunMultiScan implements ShouldQueue
 
 
 
------ app\Jobs\RunScan.php -----
+----- app/Jobs/RunScan.php -----
 
 <?php
 
@@ -601,7 +600,7 @@ class RunScan implements ShouldQueue
 === MODULE: MODEL LAYER ===
 
 
------ app\Models\Report.php -----
+----- app/Models/Report.php -----
 
 <?php
 
@@ -642,7 +641,7 @@ class Report extends Model
 
 
 
------ app\Models\ReportResult.php -----
+----- app/Models/ReportResult.php -----
 
 <?php
 
@@ -673,7 +672,7 @@ class ReportResult extends Model
 
 
 
------ app\Models\Scan.php -----
+----- app/Models/Scan.php -----
 
 <?php
 
@@ -698,7 +697,7 @@ class Scan extends Model
 
 
 
------ app\Models\ScanResult.php -----
+----- app/Models/ScanResult.php -----
 
 <?php
 
@@ -726,7 +725,7 @@ class ScanResult extends Model
 
 
 
------ app\Models\User.php -----
+----- app/Models/User.php -----
 
 <?php
 
@@ -781,7 +780,7 @@ class User extends Authenticatable
 === MODULE: PROVIDER LAYER ===
 
 
------ app\Providers\AppServiceProvider.php -----
+----- app/Providers/AppServiceProvider.php -----
 
 <?php
 
@@ -814,7 +813,7 @@ class AppServiceProvider extends ServiceProvider
 === MODULE: SERVICE LAYER ===
 
 
------ app\Services\ReportPersistenceService.php -----
+----- app/Services/ReportPersistenceService.php -----
 
 <?php
 
@@ -849,7 +848,7 @@ class ReportPersistenceService
 
 
 
------ app\Services\Scoring\PriorityFactory.php -----
+----- app/Services/Scoring/PriorityFactory.php -----
 
 <?php
 
@@ -876,7 +875,7 @@ class PriorityFactory
 === MODULE: ROUTES ===
 
 
------ routes\console.php -----
+----- routes/console.php -----
 
 <?php
 
@@ -889,7 +888,7 @@ Artisan::command('inspire', function () {
 
 
 
------ routes\web.php -----
+----- routes/web.php -----
 
 <?php
 
@@ -942,7 +941,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 === MODULE: VIEWS (BLADE) ===
 
 
------ resources\views\dashboard\index.blade.php -----
+----- resources/views/dashboard/index.blade.php -----
 
 @extends('layouts.app')
 
@@ -1042,7 +1041,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\layouts\app.blade.php -----
+----- resources/views/layouts/app.blade.php -----
 
 <!DOCTYPE html>
 <html lang="de">
@@ -1103,7 +1102,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\localseo\form.blade.php -----
+----- resources/views/localseo/form.blade.php -----
 
 @extends('layouts.app')
 
@@ -1157,7 +1156,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\multiscan\live.blade.php -----
+----- resources/views/multiscan/live.blade.php -----
 
 @extends('layouts.app')
 
@@ -1209,7 +1208,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\multiscan\result.blade.php -----
+----- resources/views/multiscan/result.blade.php -----
 
 @extends('layouts.app')
 
@@ -1246,7 +1245,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\reports\archive.blade.php -----
+----- resources/views/reports/archive.blade.php -----
 
 @extends('layouts.app')
 
@@ -1344,7 +1343,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\reports\index.blade.php -----
+----- resources/views/reports/index.blade.php -----
 
 @extends('layouts.app')
 
@@ -1394,7 +1393,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 
 
------ resources\views\reports\show.blade.php -----
+----- resources/views/reports/show.blade.php -----
 
 @extends('layouts.app')
 
@@ -1591,7 +1590,7 @@ $modules = config('seo_modules');
 
 
 
------ resources\views\scans\index.blade.php -----
+----- resources/views/scans/index.blade.php -----
 
 @extends('layouts.app')
 
@@ -1646,7 +1645,7 @@ $modules = config('seo_modules');
 
 
 
------ resources\views\scans\show.blade.php -----
+----- resources/views/scans/show.blade.php -----
 
 @extends('layouts.app')
 
@@ -1705,7 +1704,7 @@ $modules = config('seo_modules');
 
 
 
------ resources\views\welcome.blade.php -----
+----- resources/views/welcome.blade.php -----
 
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
@@ -1825,7 +1824,7 @@ $modules = config('seo_modules');
 === MODULE: FRONTEND CSS ===
 
 
------ resources\css\app.css -----
+----- resources/css/app.css -----
 
 @tailwind base;
 @tailwind components;
@@ -1835,7 +1834,7 @@ $modules = config('seo_modules');
 === MODULE: FRONTEND JS ===
 
 
------ resources\js\app.js -----
+----- resources/js/app.js -----
 
 console.log('APP JS GELADEN')
 
@@ -1863,7 +1862,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
------ resources\js\bootstrap.js -----
+----- resources/js/bootstrap.js -----
 
 import axios from 'axios';
 window.axios = axios;
@@ -1872,7 +1871,7 @@ window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 
 
 
------ resources\js\liveScan.js -----
+----- resources/js/liveScan.js -----
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -1976,7 +1975,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
------ resources\js\modules\localSeo.js -----
+----- resources/js/modules/localSeo.js -----
 
 console.log('LOCAL SEO MODULE GELADEN')
 
@@ -2015,7 +2014,7 @@ if (!form) {
 === MODULE: NODE SCANNER (FULL) ===
 
 
------ node-scanner\checks\altCheck.js -----
+----- node-scanner/checks/altCheck.js -----
 
 module.exports = async function altCheck(page) {
   const images = await page.$$eval('img', imgs =>
@@ -2038,7 +2037,7 @@ module.exports = async function altCheck(page) {
 
 
 
------ node-scanner\checks\headingCheck.js -----
+----- node-scanner/checks/headingCheck.js -----
 
 module.exports = async function headingCheck(page) {
   const headings = await page.$$eval('h1, h2, h3, h4, h5, h6', nodes =>
@@ -2071,7 +2070,7 @@ module.exports = async function headingCheck(page) {
 
 
 
------ node-scanner\checks\statusCheck.js -----
+----- node-scanner/checks/statusCheck.js -----
 
 module.exports = async function statusCheck(page, url) {
   const result = {
@@ -2104,7 +2103,7 @@ module.exports = async function statusCheck(page, url) {
 
 
 
------ node-scanner\crawlLinks.js -----
+----- node-scanner/crawlLinks.js -----
 
 const { URL } = require('url');
 
@@ -2142,7 +2141,7 @@ module.exports = async function crawlLinks(page, startUrl, maxUrls = 10) {
 
 
 
------ node-scanner\localSeoScanner.js -----
+----- node-scanner/localSeoScanner.js -----
 
 const puppeteer = require('puppeteer')
 const fs = require('fs')
@@ -2394,7 +2393,7 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
 
 
------ node-scanner\multiScanner.js -----
+----- node-scanner/multiScanner.js -----
 
 const puppeteer = require('puppeteer');
 const altCheck = require('./checks/altCheck');
@@ -2498,3 +2497,4 @@ if (!fs.existsSync(resultDir)) {
 
     fs.writeFileSync(
       path.join(resultDir, `progress.json`),
+      JSON.stringify({
