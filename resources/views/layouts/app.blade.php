@@ -27,28 +27,28 @@
 
           @foreach(config('reports.types') as $type => $report)
           <a href="{{ route($report['route']) }}"
-            class="flex items-center {{ request()->routeIs($report['route']) ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             {{ $report['label'] }}
           </a>
           @endforeach
 
           <a href="{{ route('reports.index') }}"
-            class="flex items-center {{ request()->routeIs('reports.index') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Reports
           </a>
 
           <a href="{{ route('logs.index') }}"
-            class="flex items-center {{ request()->routeIs('logs.index') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Logs
           </a>
 
           <a href="{{ route('logs.live') }}"
-            class="flex items-center {{ request()->routeIs('logs.live') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.live') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Live Logs
           </a>
 
           <a href="{{ route('queues.index') }}"
-            class="flex items-center {{ request()->routeIs('queues.index') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('queues.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Queue Monitor
           </a>
 
