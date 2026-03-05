@@ -1,3 +1,64 @@
+    if (response) {
+      result.status = response.status();
+      result.finalUrl = response.url();
+      result.redirected = result.finalUrl && result.finalUrl !== url;
+    } else {
+      result.status = 'unknown';
+    }
+  } catch (error) {
+    result.status = 'error';
+    result.error = error.message;
+  }
+
+  return result;
+};
+
+
+
+----- node-scanner/core/localSeoScanner.js -----
+
+const puppeteer = require('puppeteer')
+const fs = require('fs')
+const path = require('path')
+
+const options = JSON.parse(process.argv[2])
+const reportId = process.argv[3]
+
+const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', reportId)
+if (!fs.existsSync(resultDir)) {
+  fs.mkdirSync(resultDir, { recursive: true })
+}
+
+const progressPath = path.join(resultDir, 'progress.json')
+
+const updateProgress = (status) => {
+  fs.writeFileSync(progressPath, JSON.stringify({
+    current: 1,
+    total: 1,
+    status
+  }))
+}
+
+const rateScore = (score) => {
+  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
+  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
+  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
+  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
+}
+
+function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
+  let score = 0
+  const missing = []
+  const priorities = []
+
+  for (const rule in checks) {
+    if (checks[rule]) {
+      score += weights[rule] || 0
+    } else {
+      if (messages[rule]) {
+        missing.push(messages[rule])
+      }
+
       if (priorityConfig[rule]) {
         priorities.push({
           code: `${moduleKey}_${rule}`,
@@ -236,7 +297,7 @@ try {
 
 const scanId = process.argv[3];
 
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
+const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', scanId);
 
 if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true });
@@ -251,7 +312,7 @@ if (!fs.existsSync(resultDir)) {
   const maxPages = options.maxPages || 20;
   const maxConcurrency = 3;
 
-  const abortPath = path.resolve(__dirname, '..', 'storage', 'app', `abort-${scanId}.flag`);
+  const abortPath = path.resolve(__dirname, '..', '..', 'storage', 'app', `abort-${scanId}.flag`);
 
   const page = await browser.newPage();
 

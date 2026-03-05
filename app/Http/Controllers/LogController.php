@@ -2,50 +2,67 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\File;
+use Illuminate\Http\Request;
 
 class LogController extends Controller
 {
-  public function index()
+  protected function readLog()
   {
-    $logPath = storage_path('logs/laravel.log');
+    $path = storage_path('logs/laravel.log');
 
-    if (!File::exists($logPath)) {
-      return view('logs.index', ['entries' => []]);
+    if (!file_exists($path)) {
+      return [];
     }
 
-    $lines = File::lines($logPath)->toArray();
-    $lines = array_slice($lines, -400);
+    $lines = file($path);
 
     $entries = [];
+    $current = null;
 
     foreach ($lines as $line) {
-      if (preg_match('/^\[(.*?)\]\s+(\w+)\.(\w+):\s+(.*)$/', $line, $matches)) {
-        $entries[] = [
-          'timestamp' => $matches[1],
-          'environment' => $matches[2],
-          'level' => strtoupper($matches[3]),
-          'message' => $matches[4],
+
+      $line = preg_replace('/\e\[[\d;]*m/', '', $line);
+      $line = trim($line);
+
+      if (preg_match('/^\[(.*?)\]\s+(\w+)\.(\w+):\s+(.*)$/', $line, $m)) {
+
+        if ($current) {
+          $entries[] = $current;
+        }
+
+        $current = [
+          'timestamp' => $m[1],
+          'environment' => $m[2],
+          'level' => strtolower($m[3]),
+          'message' => $m[4],
+          'trace' => []
         ];
+      } else {
+
+        if ($current) {
+          $current['trace'][] = $line;
+        }
       }
     }
 
-    return view('logs.index', compact('entries'));
-  }
-
-  public function raw(): JsonResponse
-  {
-    $logPath = storage_path('logs/laravel.log');
-
-    if (!File::exists($logPath)) {
-      return response()->json(['lines' => []]);
+    if ($current) {
+      $entries[] = $current;
     }
 
-    $lines = File::lines($logPath)->toArray();
+    return array_reverse($entries);
+  }
 
-    return response()->json([
-      'lines' => array_slice($lines, -200),
+  public function index()
+  {
+    $entries = $this->readLog();
+
+    return view('logs.index', [
+      'entries' => array_slice($entries, 0, 200)
     ]);
+  }
+
+  public function raw()
+  {
+    return response()->json($this->readLog());
   }
 }

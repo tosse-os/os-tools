@@ -1,56 +1,103 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="space-y-6">
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-gray-900">System Logs</h1>
-        <p class="text-sm text-gray-500 mt-1">Recent application log events with visual severity indicators.</p>
-      </div>
-      <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 w-fit">
-        {{ count($entries) }} entries
-      </span>
+
+<div class="bg-white shadow rounded-lg p-6">
+
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">System Logs</h1>
+      <p class="text-sm text-gray-500 mt-1">Recent application log events.</p>
     </div>
 
-    <div class="mt-6 overflow-x-auto rounded-xl border border-gray-200">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-          <tr>
-            <th class="py-3 px-4">Timestamp</th>
-            <th class="py-3 px-4">Environment</th>
-            <th class="py-3 px-4">Level</th>
-            <th class="py-3 px-4">Message</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          @forelse($entries as $entry)
-          <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-orange-50 transition-colors">
-            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['timestamp'] }}</td>
-            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['environment'] }}</td>
-            <td class="py-3 px-4">
-              @php($level = strtoupper($entry['level']))
-              <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold
-                {{ $level === 'ERROR' ? 'bg-red-100 text-red-700 ring-1 ring-red-200' : '' }}
-                {{ $level === 'WARNING' ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200' : '' }}
-                {{ $level === 'INFO' ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' : '' }}
-                {{ $level === 'DEBUG' ? 'bg-gray-200 text-gray-700 ring-1 ring-gray-300' : '' }}
-                {{ !in_array($level, ['ERROR', 'WARNING', 'INFO', 'DEBUG']) ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' : '' }}">
-                {{ $entry['level'] }}
-              </span>
-            </td>
-            <td class="py-3 px-4">
-              <pre class="font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ $entry['message'] }}</pre>
-            </td>
-          </tr>
-          @empty
-          <tr>
-            <td colspan="4" class="py-8 px-4 text-center text-gray-500">No log entries found.</td>
-          </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </section>
+    <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 w-fit">
+      {{ count($entries) }} entries
+    </span>
+  </div>
+
+
+  <div class="overflow-x-auto">
+
+    <table class="min-w-full divide-y divide-gray-200 text-sm">
+
+      <thead class="bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+        <tr>
+          <th class="px-4 py-3">Time</th>
+          <th class="px-4 py-3">Env</th>
+          <th class="px-4 py-3">Level</th>
+          <th class="px-4 py-3">Message</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y divide-gray-200">
+
+        @forelse($entries as $entry)
+
+        @php
+        $level = strtoupper($entry['level'] ?? 'info');
+        $color = match($entry['level'] ?? 'info') {
+        'error','critical' => 'text-red-600',
+        'warning' => 'text-orange-600',
+        default => 'text-gray-700'
+        };
+        @endphp
+
+        <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-orange-50 transition-colors">
+
+          <td class="py-3 px-4 whitespace-nowrap text-gray-700">
+            {{ $entry['timestamp'] ?? '' }}
+          </td>
+
+          <td class="py-3 px-4 whitespace-nowrap text-gray-700">
+            {{ $entry['environment'] ?? '' }}
+          </td>
+
+          <td class="py-3 px-4 whitespace-nowrap font-semibold {{ $color }}">
+            {{ $level }}
+          </td>
+
+          <td class="py-3 px-4">
+
+            <div class="font-medium text-gray-900">
+              {{ $entry['message'] ?? '' }}
+            </div>
+
+            @if(!empty($entry['trace']))
+
+            <details class="mt-2 text-xs text-gray-600">
+
+              <summary class="cursor-pointer text-orange-600 hover:underline">
+                Stacktrace anzeigen
+              </summary>
+
+              <pre class="mt-2 whitespace-pre-wrap bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto">
+              {{ implode("\n", $entry['trace']) }}
+              </pre>
+
+            </details>
+
+            @endif
+
+          </td>
+
+        </tr>
+
+        @empty
+
+        <tr>
+          <td colspan="4" class="py-6 text-center text-gray-500">
+            No log entries found.
+          </td>
+        </tr>
+
+        @endforelse
+
+      </tbody>
+
+    </table>
+
+  </div>
+
 </div>
+
 @endsection

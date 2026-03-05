@@ -1,7 +1,7 @@
 
 === EXPORT META ===
 
-Total Files Exported: 53
+Total Files Exported: 54
 
 === FILE STRUCTURE ===
 
@@ -61,6 +61,8 @@ resources
     modules
       localSeo.js
   views
+    crawler
+      form.blade.php
     dashboard
       index.blade.php
     layouts
@@ -244,51 +246,68 @@ class LocalSeoController extends Controller
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\File;
-
 class LogController extends Controller
 {
   public function index()
   {
-    $logPath = storage_path('logs/laravel.log');
+    $path = storage_path('logs/laravel.log');
 
-    if (!File::exists($logPath)) {
-      return view('logs.index', ['entries' => []]);
+    if (!file_exists($path)) {
+      return view('logs.index', [
+        'entries' => []
+      ]);
     }
 
-    $lines = File::lines($logPath)->toArray();
-    $lines = array_slice($lines, -400);
-
+    $lines = file($path);
     $entries = [];
 
-    foreach ($lines as $line) {
+    foreach (array_slice($lines, -200) as $line) {
+
+      $line = preg_replace('/\e\[[\d;]*m/', '', $line);
+      $line = trim($line);
+
       if (preg_match('/^\[(.*?)\]\s+(\w+)\.(\w+):\s+(.*)$/', $line, $matches)) {
+
         $entries[] = [
           'timestamp' => $matches[1],
           'environment' => $matches[2],
-          'level' => strtoupper($matches[3]),
+          'level' => strtolower($matches[3]),
           'message' => $matches[4],
+        ];
+      } else {
+
+        $entries[] = [
+          'timestamp' => '',
+          'environment' => '',
+          'level' => 'info',
+          'message' => $line,
         ];
       }
     }
 
-    return view('logs.index', compact('entries'));
+    return view('logs.index', [
+      'entries' => array_reverse($entries)
+    ]);
   }
 
-  public function raw(): JsonResponse
+  public function raw()
   {
-    $logPath = storage_path('logs/laravel.log');
+    $path = storage_path('logs/laravel.log');
 
-    if (!File::exists($logPath)) {
-      return response()->json(['lines' => []]);
+    if (!file_exists($path)) {
+      return response()->json([]);
     }
 
-    $lines = File::lines($logPath)->toArray();
+    $lines = file($path);
+    $clean = [];
 
-    return response()->json([
-      'lines' => array_slice($lines, -200),
-    ]);
+    foreach (array_slice($lines, -200) as $line) {
+
+      $line = preg_replace('/\e\[[\d;]*m/', '', $line);
+      $clean[] = trim($line);
+    }
+
+    return response()->json($clean);
   }
 }
 
@@ -464,6 +483,24 @@ class ScanController extends Controller
     public function show(Scan $scan)
     {
         return view('scans.show', compact('scan'));
+    }
+    public function abort(Request $request)
+    {
+        $scanId = $request->input('scanId');
+
+        if (!$scanId) {
+            return response()->json(['error' => 'missing scanId'], 400);
+        }
+
+        $path = base_path("node-scanner/storage/app/abort-{$scanId}.flag");
+
+        if (!file_exists(dirname($path))) {
+            mkdir(dirname($path), 0777, true);
+        }
+
+        file_put_contents($path, 'abort');
+
+        return response()->json(['status' => 'abort_requested']);
     }
 }
 
@@ -1014,6 +1051,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
+use App\Http\Controllers\ScanController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -1028,12 +1066,29 @@ Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.star
 
 /*
 |--------------------------------------------------------------------------
-| LOCAL SEO REPORT (Platzhalter für nächstes Modul)
+| LOCAL SEO REPORT
 |--------------------------------------------------------------------------
 */
 
 Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
 Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
+
+/*
+|--------------------------------------------------------------------------
+| MULTI SCAN / LIVE SCANNER
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
+Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
+
+Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
+Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
+
+Route::post('/multiscan/abort', [ScanController::class, 'abort']);
+
+Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
+Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
 
 /*
 |--------------------------------------------------------------------------
@@ -1063,10 +1118,17 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
 Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
 Route::view('/logs/live', 'logs.live')->name('logs.live');
+
 Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
 
 
 === MODULE: VIEWS (BLADE) ===
+
+
+----- resources/views/crawler/form.blade.php -----
+
+/crawler/form.blade.php
+
 
 
 ----- resources/views/dashboard/index.blade.php -----
@@ -1196,6 +1258,7 @@ Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
             <!-- <span class="text-xl font-semibold text-gray-800">Orange Tools</span> -->
           </a>
         </div>
+
         <nav class="flex space-x-6 text-sm font-medium">
 
           @foreach(config('reports.types') as $type => $report)
@@ -1231,12 +1294,10 @@ Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
     </div>
   </header>
 
-
-
-
   <main class="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
     @yield('content')
   </main>
+
   @yield('scripts')
 
 </body>
@@ -1414,7 +1475,7 @@ Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
 
 @section('content')
 <form id="live-scan-form" class="mb-6 flex gap-2 items-center">
-  <input type="url" name="url" required placeholder="https://example.com"
+  <input type="url" name="url" required value="https://orange-services.de" placeholder="https://example.com"
     class="flex-1 border border-gray-300 px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-orange-500">
   <button type="submit"
     class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition flex items-center gap-2">
@@ -2436,64 +2497,3 @@ module.exports = async function statusCheck(page, url) {
       waitUntil: 'domcontentloaded',
       timeout: 20000
     });
-
-    if (response) {
-      result.status = response.status();
-      result.finalUrl = response.url();
-      result.redirected = result.finalUrl && result.finalUrl !== url;
-    } else {
-      result.status = 'unknown';
-    }
-  } catch (error) {
-    result.status = 'error';
-    result.error = error.message;
-  }
-
-  return result;
-};
-
-
-
------ node-scanner/core/localSeoScanner.js -----
-
-const puppeteer = require('puppeteer')
-const fs = require('fs')
-const path = require('path')
-
-const options = JSON.parse(process.argv[2])
-const reportId = process.argv[3]
-
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true })
-}
-
-const progressPath = path.join(resultDir, 'progress.json')
-
-const updateProgress = (status) => {
-  fs.writeFileSync(progressPath, JSON.stringify({
-    current: 1,
-    total: 1,
-    status
-  }))
-}
-
-const rateScore = (score) => {
-  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
-  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
-  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
-  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
-}
-
-function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
-  let score = 0
-  const missing = []
-  const priorities = []
-
-  for (const rule in checks) {
-    if (checks[rule]) {
-      score += weights[rule] || 0
-    } else {
-      if (messages[rule]) {
-        missing.push(messages[rule])
-      }
