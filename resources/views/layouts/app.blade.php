@@ -42,6 +42,16 @@
             Logs
           </a>
 
+          <a href="{{ route('logs.live') }}"
+            class="flex items-center {{ request()->routeIs('logs.live') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            Live Logs
+          </a>
+
+          <a href="{{ route('queues.index') }}"
+            class="flex items-center {{ request()->routeIs('queues.index') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            Queue Monitor
+          </a>
+
         </nav>
 
       </div>
