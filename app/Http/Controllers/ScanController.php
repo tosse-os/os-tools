@@ -84,4 +84,22 @@ class ScanController extends Controller
     {
         return view('scans.show', compact('scan'));
     }
+    public function abort(Request $request)
+    {
+        $scanId = $request->input('scanId');
+
+        if (!$scanId) {
+            return response()->json(['error' => 'missing scanId'], 400);
+        }
+
+        $path = base_path("node-scanner/storage/app/abort-{$scanId}.flag");
+
+        if (!file_exists(dirname($path))) {
+            mkdir(dirname($path), 0777, true);
+        }
+
+        file_put_contents($path, 'abort');
+
+        return response()->json(['status' => 'abort_requested']);
+    }
 }

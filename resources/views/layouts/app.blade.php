@@ -23,6 +23,7 @@
             <!-- <span class="text-xl font-semibold text-gray-800">Orange Tools</span> -->
           </a>
         </div>
+
         <nav class="flex space-x-6 text-sm font-medium">
 
           @foreach(config('reports.types') as $type => $report)
@@ -58,12 +59,10 @@
     </div>
   </header>
 
-
-
-
   <main class="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
     @yield('content')
   </main>
+
   @yield('scripts')
 
 </body>

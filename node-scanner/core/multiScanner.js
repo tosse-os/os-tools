@@ -26,7 +26,7 @@ try {
 
 const scanId = process.argv[3];
 
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
+const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', scanId);
 
 if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true });
@@ -41,7 +41,7 @@ if (!fs.existsSync(resultDir)) {
   const maxPages = options.maxPages || 20;
   const maxConcurrency = 3;
 
-  const abortPath = path.resolve(__dirname, '..', 'storage', 'app', `abort-${scanId}.flag`);
+  const abortPath = path.resolve(__dirname, '..', '..', 'storage', 'app', `abort-${scanId}.flag`);
 
   const page = await browser.newPage();
 

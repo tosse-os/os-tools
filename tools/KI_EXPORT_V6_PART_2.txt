@@ -1,39 +1,3 @@
-
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true })
-}
-
-const progressPath = path.join(resultDir, 'progress.json')
-
-const updateProgress = (status) => {
-  fs.writeFileSync(progressPath, JSON.stringify({
-    current: 1,
-    total: 1,
-    status
-  }))
-}
-
-const rateScore = (score) => {
-  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
-  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
-  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
-  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
-}
-
-function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
-  let score = 0
-  const missing = []
-  const priorities = []
-
-  for (const rule in checks) {
-    if (checks[rule]) {
-      score += weights[rule] || 0
-    } else {
-      if (messages[rule]) {
-        missing.push(messages[rule])
-      }
-
       if (priorityConfig[rule]) {
         priorities.push({
           code: `${moduleKey}_${rule}`,
@@ -242,13 +206,13 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
 
 
------ node-scanner/multiScanner.js -----
+----- node-scanner/core/multiScanner.js -----
 
 const puppeteer = require('puppeteer');
-const altCheck = require('./checks/altCheck');
-const headingCheck = require('./checks/headingCheck');
-const statusCheck = require('./checks/statusCheck');
-const { collectUniqueUrls } = require('./utils/urlUtils');
+const altCheck = require('../checks/altCheck');
+const headingCheck = require('../checks/headingCheck');
+const statusCheck = require('../checks/statusCheck');
+const { collectUniqueUrls } = require('../utils/urlUtils');
 const fs = require('fs');
 const path = require('path');
 
@@ -446,12 +410,12 @@ if (!fs.existsSync(resultDir)) {
 
 
 
------ node-scanner/scanner.js -----
+----- node-scanner/core/scanner.js -----
 
 const puppeteer = require('puppeteer');
-const altCheck = require('./checks/altCheck');
-const headingCheck = require('./checks/headingCheck');
-const statusCheck = require('./checks/statusCheck');
+const altCheck = require('../checks/altCheck');
+const headingCheck = require('../checks/headingCheck');
+const statusCheck = require('../checks/statusCheck');
 
 let options;
 try {
@@ -503,6 +467,44 @@ try {
 console.log(JSON.stringify(results));
 
 })();
+
+
+
+----- node-scanner/crawl/crawlLinks.js -----
+
+const { URL } = require('url');
+
+module.exports = async function crawlLinks(page, startUrl, maxUrls = 10) {
+  const visited = new Set();
+  const queue = [startUrl];
+  const origin = new URL(startUrl).origin;
+
+  while (queue.length && visited.size < maxUrls) {
+    const url = queue.shift();
+    if (visited.has(url)) continue;
+
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+      const links = await page.$$eval('a[href]', (as) =>
+        as.map((a) => a.href).filter((href) => href.startsWith('http'))
+      );
+
+      for (const link of links) {
+        const u = new URL(link);
+        if (u.origin === origin && !visited.has(link) && !queue.includes(link)) {
+          queue.push(link);
+        }
+      }
+
+      visited.add(url);
+    } catch (e) {
+      // überspringen bei Fehler
+    }
+  }
+
+  return Array.from(visited).slice(0, maxUrls);
+};
 
 
 

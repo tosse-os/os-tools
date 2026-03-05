@@ -2,7 +2,7 @@
 
 @section('content')
 <form id="live-scan-form" class="mb-6 flex gap-2 items-center">
-  <input type="url" name="url" required placeholder="https://example.com"
+  <input type="url" name="url" required value="https://orange-services.de" placeholder="https://example.com"
     class="flex-1 border border-gray-300 px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-orange-500">
   <button type="submit"
     class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition flex items-center gap-2">

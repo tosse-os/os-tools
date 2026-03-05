@@ -5,7 +5,7 @@ const path = require('path')
 const options = JSON.parse(process.argv[2])
 const reportId = process.argv[3]
 
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
+const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', reportId)
 if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true })
 }

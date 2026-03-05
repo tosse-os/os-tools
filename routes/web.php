@@ -7,6 +7,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
+use App\Http\Controllers\ScanController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -21,12 +22,29 @@ Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.star
 
 /*
 |--------------------------------------------------------------------------
-| LOCAL SEO REPORT (Platzhalter für nächstes Modul)
+| LOCAL SEO REPORT
 |--------------------------------------------------------------------------
 */
 
 Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
 Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
+
+/*
+|--------------------------------------------------------------------------
+| MULTI SCAN / LIVE SCANNER
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
+Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
+
+Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
+Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
+
+Route::post('/multiscan/abort', [ScanController::class, 'abort']);
+
+Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
+Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
 
 /*
 |--------------------------------------------------------------------------
@@ -56,4 +74,5 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
 Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
 Route::view('/logs/live', 'logs.live')->name('logs.live');
+
 Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');

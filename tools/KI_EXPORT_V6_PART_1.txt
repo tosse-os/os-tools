@@ -43,10 +43,12 @@ node-scanner
     altCheck.js
     headingCheck.js
     statusCheck.js
-  crawlLinks.js
-  localSeoScanner.js
-  multiScanner.js
-  scanner.js
+  core
+    localSeoScanner.js
+    multiScanner.js
+    scanner.js
+  crawl
+    crawlLinks.js
   utils
     urlUtils.js
 resources
@@ -521,7 +523,7 @@ class RunLocalSeo implements ShouldQueue
 
         $process = new \Symfony\Component\Process\Process([
             'node',
-            base_path('node-scanner/localSeoScanner.js'),
+            base_path('node-scanner/core/localSeoScanner.js'),
             json_encode($options),
             $this->reportId
         ]);
@@ -632,7 +634,7 @@ class RunMultiScan implements ShouldQueue
 
         $process = new Process([
             'node',
-            base_path('node-scanner/multiScanner.js'),
+            base_path('node-scanner/core/multiScanner.js'),
             json_encode($this->options),
             $this->scanId
         ]);
@@ -700,7 +702,7 @@ class RunScan implements ShouldQueue
 
         $process = new Process([
             'node',
-            base_path('node-scanner/multiScanner.js'),
+            base_path('node-scanner/core/multiScanner.js'),
             json_encode($options),
             $this->scanId
         ]);
@@ -2452,45 +2454,7 @@ module.exports = async function statusCheck(page, url) {
 
 
 
------ node-scanner/crawlLinks.js -----
-
-const { URL } = require('url');
-
-module.exports = async function crawlLinks(page, startUrl, maxUrls = 10) {
-  const visited = new Set();
-  const queue = [startUrl];
-  const origin = new URL(startUrl).origin;
-
-  while (queue.length && visited.size < maxUrls) {
-    const url = queue.shift();
-    if (visited.has(url)) continue;
-
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-      const links = await page.$$eval('a[href]', (as) =>
-        as.map((a) => a.href).filter((href) => href.startsWith('http'))
-      );
-
-      for (const link of links) {
-        const u = new URL(link);
-        if (u.origin === origin && !visited.has(link) && !queue.includes(link)) {
-          queue.push(link);
-        }
-      }
-
-      visited.add(url);
-    } catch (e) {
-      // überspringen bei Fehler
-    }
-  }
-
-  return Array.from(visited).slice(0, maxUrls);
-};
-
-
-
------ node-scanner/localSeoScanner.js -----
+----- node-scanner/core/localSeoScanner.js -----
 
 const puppeteer = require('puppeteer')
 const fs = require('fs')
@@ -2498,3 +2462,38 @@ const path = require('path')
 
 const options = JSON.parse(process.argv[2])
 const reportId = process.argv[3]
+
+const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
+if (!fs.existsSync(resultDir)) {
+  fs.mkdirSync(resultDir, { recursive: true })
+}
+
+const progressPath = path.join(resultDir, 'progress.json')
+
+const updateProgress = (status) => {
+  fs.writeFileSync(progressPath, JSON.stringify({
+    current: 1,
+    total: 1,
+    status
+  }))
+}
+
+const rateScore = (score) => {
+  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
+  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
+  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
+  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
+}
+
+function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
+  let score = 0
+  const missing = []
+  const priorities = []
+
+  for (const rule in checks) {
+    if (checks[rule]) {
+      score += weights[rule] || 0
+    } else {
+      if (messages[rule]) {
+        missing.push(messages[rule])
+      }
