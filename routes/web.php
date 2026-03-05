@@ -5,6 +5,8 @@ use App\Http\Controllers\CrawlerController;
 use App\Http\Controllers\LocalSeoController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LogController;
+use App\Http\Controllers\QueueController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -44,3 +46,8 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
     'finished_at' => $report->finished_at,
   ]);
 });
+
+Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
+Route::view('/logs/live', 'logs.live')->name('logs.live');
+Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
