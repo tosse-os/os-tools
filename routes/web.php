@@ -54,6 +54,7 @@ Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show')
 
 Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
 Route::get('/reports/archive', [ReportController::class, 'archive'])->name('reports.archive');
+Route::get('/reports/compare', [ReportController::class, 'compare'])->name('reports.compare');
 Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
 
 Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
