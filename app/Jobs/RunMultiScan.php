@@ -32,7 +32,7 @@ class RunMultiScan implements ShouldQueue
 
         $process = new Process([
             'node',
-            base_path('node-scanner/multiScanner.js'),
+            base_path('node-scanner/core/multiScanner.js'),
             json_encode($this->options),
             $this->scanId
         ]);

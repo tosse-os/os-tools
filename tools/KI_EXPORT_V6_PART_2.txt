@@ -1,3 +1,389 @@
+
+const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
+if (!fs.existsSync(resultDir)) {
+  fs.mkdirSync(resultDir, { recursive: true })
+}
+
+const progressPath = path.join(resultDir, 'progress.json')
+
+const updateProgress = (status) => {
+  fs.writeFileSync(progressPath, JSON.stringify({
+    current: 1,
+    total: 1,
+    status
+  }))
+}
+
+const rateScore = (score) => {
+  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
+  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
+  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
+  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
+}
+
+function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
+  let score = 0
+  const missing = []
+  const priorities = []
+
+  for (const rule in checks) {
+    if (checks[rule]) {
+      score += weights[rule] || 0
+    } else {
+      if (messages[rule]) {
+        missing.push(messages[rule])
+      }
+
+      if (priorityConfig[rule]) {
+        priorities.push({
+          code: `${moduleKey}_${rule}`,
+          severity: priorityConfig[rule].severity,
+          category: priorityConfig[rule].category,
+          message: messages[rule]
+        })
+      }
+    }
+  }
+
+  const max = Object.values(weights).reduce((a, b) => a + b, 0)
+
+  return {
+    score,
+    max,
+    checks,
+    weights,
+    missing,
+    priorities
+  }
+}
+
+; (async () => {
+
+  updateProgress('running')
+
+  const browser = await puppeteer.launch({ headless: true })
+  const page = await browser.newPage()
+
+  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+
+  const title = await page.title()
+  const h1 = await page.$$eval('h1', els => els.map(e => e.innerText))
+  const bodyText = await page.evaluate(() => document.body.innerText)
+
+  const jsonLd = await page.$$eval(
+    'script[type="application/ld+json"]',
+    scripts => scripts.map(s => s.innerText)
+  )
+
+  const keyword = options.keyword.toLowerCase()
+  const city = options.city.toLowerCase()
+
+  let score = 0
+  let priorities = []
+  const breakdown = {}
+
+  // ================= TITLE =================
+
+  const titleLower = title.toLowerCase()
+
+  const titleResult = evaluateModule(
+    'title',
+    {
+      keyword_present: titleLower.includes(keyword),
+      city_present: titleLower.includes(city),
+      keyword_city_combination:
+        titleLower.includes(`${keyword} ${city}`) ||
+        titleLower.includes(`${city} ${keyword}`)
+    },
+    {
+      keyword_present: 10,
+      city_present: 10,
+      keyword_city_combination: 5
+    },
+    {
+      keyword_present: 'Keyword fehlt im Title',
+      city_present: 'Stadt fehlt im Title',
+      keyword_city_combination: 'Keyword + Stadt Kombination fehlt'
+    },
+    {
+      keyword_present: { severity: 'high', category: 'title' },
+      city_present: { severity: 'medium', category: 'title' }
+    }
+  )
+
+  breakdown.title = titleResult
+  score += titleResult.score
+  priorities = priorities.concat(titleResult.priorities)
+
+  // ================= H1 =================
+
+  const h1Text = h1.join(' ').toLowerCase()
+
+  const h1Result = evaluateModule(
+    'h1',
+    {
+      exists: h1.length > 0,
+      keyword_present: h1Text.includes(keyword),
+      city_present: h1Text.includes(city)
+    },
+    {
+      exists: 5,
+      keyword_present: 8,
+      city_present: 7
+    },
+    {
+      exists: 'Keine H1 vorhanden',
+      keyword_present: 'Keyword nicht in H1 enthalten',
+      city_present: 'Stadt nicht in H1 enthalten'
+    },
+    {
+      exists: { severity: 'high', category: 'headings' }
+    }
+  )
+
+  breakdown.h1 = h1Result
+  score += h1Result.score
+  priorities = priorities.concat(h1Result.priorities)
+
+  // ================= SCHEMA =================
+
+  let hasLocalBusiness = false
+  let hasAddress = false
+  let hasPhone = false
+
+  jsonLd.forEach(block => {
+    try {
+      const parsed = JSON.parse(block)
+      const data = Array.isArray(parsed) ? parsed : [parsed]
+
+      data.forEach(item => {
+        if (item['@type'] && item['@type'].toLowerCase().includes('localbusiness')) {
+          hasLocalBusiness = true
+          if (item.address) hasAddress = true
+          if (item.telephone) hasPhone = true
+        }
+      })
+    } catch { }
+  })
+
+  const schemaResult = evaluateModule(
+    'schema',
+    {
+      has_localbusiness: hasLocalBusiness,
+      has_address: hasAddress,
+      has_phone: hasPhone
+    },
+    {
+      has_localbusiness: 10,
+      has_address: 5,
+      has_phone: 5
+    },
+    {
+      has_localbusiness: 'LocalBusiness Schema fehlt',
+      has_address: 'Adresse fehlt im Schema',
+      has_phone: 'Telefonnummer fehlt im Schema'
+    },
+    {
+      has_localbusiness: { severity: 'high', category: 'schema' },
+      has_phone: { severity: 'medium', category: 'schema' }
+    }
+  )
+
+  breakdown.schema = schemaResult
+  score += schemaResult.score
+  priorities = priorities.concat(schemaResult.priorities)
+
+  // ================= NAP =================
+
+  const hasPhoneInHtml = bodyText.match(/\+?\d[\d\s\-\/]{6,}/)
+  const hasCityInHtml = bodyText.includes(city)
+
+  const napResult = evaluateModule(
+    'nap',
+    {
+      phone_present: !!hasPhoneInHtml,
+      city_present: hasCityInHtml
+    },
+    {
+      phone_present: 10,
+      city_present: 10
+    },
+    {
+      phone_present: 'Telefonnummer nicht im sichtbaren Inhalt gefunden',
+      city_present: 'Stadt nicht im Content gefunden'
+    },
+    {
+      phone_present: { severity: 'medium', category: 'nap' }
+    }
+  )
+
+  breakdown.nap = napResult
+  score += napResult.score
+  priorities = priorities.concat(napResult.priorities)
+
+  const result = {
+    dimension: 'local_seo',
+    score,
+    max_score: 100,
+    rating: rateScore(score),
+    breakdown,
+    priorities
+  }
+
+  fs.writeFileSync(
+    path.join(resultDir, '0.json'),
+    JSON.stringify(result, null, 2)
+  )
+
+  updateProgress('done')
+  await browser.close()
+
+})()
+
+
+
+----- node-scanner/multiScanner.js -----
+
+const puppeteer = require('puppeteer');
+const altCheck = require('./checks/altCheck');
+const headingCheck = require('./checks/headingCheck');
+const statusCheck = require('./checks/statusCheck');
+const { collectUniqueUrls } = require('./utils/urlUtils');
+const fs = require('fs');
+const path = require('path');
+
+const logFile = path.resolve(__dirname, '..', 'storage', 'logs', 'node-scanner.log');
+
+function log(message) {
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
+  } catch { }
+}
+
+let options;
+
+try {
+  options = JSON.parse(process.argv[2]);
+} catch (err) {
+  log(`Scanner Options Fehler: ${err.message}`);
+  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
+  process.exit(1);
+}
+
+const scanId = process.argv[3];
+
+const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
+
+if (!fs.existsSync(resultDir)) {
+  fs.mkdirSync(resultDir, { recursive: true });
+}
+
+(async () => {
+
+  log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
+
+  const browser = await puppeteer.launch({ headless: true });
+
+  const maxPages = options.maxPages || 20;
+  const maxConcurrency = 3;
+
+  const abortPath = path.resolve(__dirname, '..', 'storage', 'app', `abort-${scanId}.flag`);
+
+  const page = await browser.newPage();
+
+  await page.setRequestInterception(true);
+
+  page.on('request', (req) => {
+    const type = req.resourceType();
+    if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+      req.abort();
+    } else {
+      req.continue();
+    }
+  });
+
+  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+  const hrefs = await page.$$eval('a[href]', links =>
+    links
+      .map(link => link.getAttribute('href'))
+      .filter(Boolean)
+      .filter(href => !href.startsWith('#'))
+      .filter(href => !href.startsWith('mailto:'))
+      .filter(href => !href.startsWith('tel:'))
+      .filter(href => !href.startsWith('javascript:'))
+  );
+
+  const absoluteUrls = collectUniqueUrls(options.url, hrefs).slice(0, maxPages);
+
+  log(`URLs gefunden: ${absoluteUrls.length}`);
+
+  await page.close();
+
+  fs.writeFileSync(
+    path.join(resultDir, `progress.json`),
+    JSON.stringify({
+      current: 0,
+      total: absoluteUrls.length,
+      status: 'running'
+    })
+  );
+
+  let currentIndex = 0;
+
+  const runTask = async (url, position) => {
+
+    const page = await browser.newPage();
+
+    await page.setRequestInterception(true);
+
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    let result = { url };
+
+    try {
+
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+      result.title = await page.title();
+
+      if (options.checks.includes('status')) {
+        result.statusCheck = await statusCheck(page, url);
+      }
+
+      if (options.checks.includes('alt')) {
+        result.altCheck = await altCheck(page);
+      }
+
+      if (options.checks.includes('heading')) {
+        result.headingCheck = await headingCheck(page);
+      }
+
+    } catch (err) {
+
+      result.error = err.message;
+
+      log(`Fehler bei ${url}: ${err.message}`);
+
+    }
+
+    fs.writeFileSync(
+      path.join(resultDir, `${position}.json`),
+      JSON.stringify(result, null, 2)
+    );
+
+    const newCurrent = position + 1;
+
+    fs.writeFileSync(
+      path.join(resultDir, `progress.json`),
+      JSON.stringify({
         current: newCurrent,
         total: absoluteUrls.length,
         status: fs.existsSync(abortPath) ? 'aborted' : 'running'
@@ -10,6 +396,9 @@
   while (currentIndex < absoluteUrls.length) {
 
     if (fs.existsSync(abortPath)) {
+
+      log(`Scan abgebrochen: ${scanId}`);
+
       fs.writeFileSync(
         path.join(resultDir, `progress.json`),
         JSON.stringify({
@@ -18,15 +407,19 @@
           status: 'aborted'
         })
       );
+
       break;
     }
 
     const batch = [];
 
     while (batch.length < maxConcurrency && currentIndex < absoluteUrls.length) {
+
       const position = currentIndex;
       const url = absoluteUrls[position];
+
       batch.push(runTask(url, position));
+
       currentIndex++;
     }
 
@@ -34,6 +427,9 @@
   }
 
   if (!fs.existsSync(abortPath)) {
+
+    log(`Scan abgeschlossen: ${scanId}`);
+
     fs.writeFileSync(
       path.join(resultDir, `progress.json`),
       JSON.stringify({
@@ -45,6 +441,7 @@
   }
 
   await browser.close();
+
 })();
 
 

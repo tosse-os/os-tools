@@ -1,8 +1,8 @@
 const puppeteer = require('puppeteer');
-const altCheck = require('./checks/altCheck');
-const headingCheck = require('./checks/headingCheck');
-const statusCheck = require('./checks/statusCheck');
-const { collectUniqueUrls } = require('./utils/urlUtils');
+const altCheck = require('../checks/altCheck');
+const headingCheck = require('../checks/headingCheck');
+const statusCheck = require('../checks/statusCheck');
+const { collectUniqueUrls } = require('../utils/urlUtils');
 const fs = require('fs');
 const path = require('path');
 

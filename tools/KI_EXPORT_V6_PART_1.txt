@@ -1,7 +1,7 @@
 
 === EXPORT META ===
 
-Total Files Exported: 48
+Total Files Exported: 53
 
 === FILE STRUCTURE ===
 
@@ -12,6 +12,8 @@ app
       CrawlerController.php
       DashboardController.php
       LocalSeoController.php
+      LogController.php
+      QueueController.php
       ReportController.php
       ScanController.php
   Jobs
@@ -63,9 +65,14 @@ resources
       app.blade.php
     localseo
       form.blade.php
+    logs
+      index.blade.php
+      live.blade.php
     multiscan
       live.blade.php
       result.blade.php
+    queues
+      index.blade.php
     reports
       archive.blade.php
       index.blade.php
@@ -224,6 +231,90 @@ class LocalSeoController extends Controller
     return response()->json([
       'reportId' => $report->id
     ]);
+  }
+}
+
+
+
+----- app/Http/Controllers/LogController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\File;
+
+class LogController extends Controller
+{
+  public function index()
+  {
+    $logPath = storage_path('logs/laravel.log');
+
+    if (!File::exists($logPath)) {
+      return view('logs.index', ['entries' => []]);
+    }
+
+    $lines = File::lines($logPath)->toArray();
+    $lines = array_slice($lines, -400);
+
+    $entries = [];
+
+    foreach ($lines as $line) {
+      if (preg_match('/^\[(.*?)\]\s+(\w+)\.(\w+):\s+(.*)$/', $line, $matches)) {
+        $entries[] = [
+          'timestamp' => $matches[1],
+          'environment' => $matches[2],
+          'level' => strtoupper($matches[3]),
+          'message' => $matches[4],
+        ];
+      }
+    }
+
+    return view('logs.index', compact('entries'));
+  }
+
+  public function raw(): JsonResponse
+  {
+    $logPath = storage_path('logs/laravel.log');
+
+    if (!File::exists($logPath)) {
+      return response()->json(['lines' => []]);
+    }
+
+    $lines = File::lines($logPath)->toArray();
+
+    return response()->json([
+      'lines' => array_slice($lines, -200),
+    ]);
+  }
+}
+
+
+
+----- app/Http/Controllers/QueueController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Support\Facades\DB;
+
+class QueueController extends Controller
+{
+  public function index()
+  {
+    $jobs = DB::table('jobs')
+      ->select('id', 'queue', 'attempts')
+      ->orderByDesc('id')
+      ->get();
+
+    $failedJobs = DB::table('failed_jobs')
+      ->select('id', 'exception')
+      ->orderByDesc('id')
+      ->get();
+
+    return view('queues.index', compact('jobs', 'failedJobs'));
   }
 }
 
@@ -390,6 +481,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Log;
 
 class RunLocalSeo implements ShouldQueue
 {
@@ -408,6 +500,12 @@ class RunLocalSeo implements ShouldQueue
 
     public function handle(): void
     {
+        Log::info('Local SEO Job gestartet', [
+            'report_id' => $this->reportId,
+            'keyword' => $this->keyword,
+            'city' => $this->city
+        ]);
+
         $report = \App\Models\Report::findOrFail($this->reportId);
 
         $report->update([
@@ -432,30 +530,50 @@ class RunLocalSeo implements ShouldQueue
         $process->run();
 
         if (!$process->isSuccessful()) {
+
+            Log::error('Local SEO Node Prozess fehlgeschlagen', [
+                'report_id' => $this->reportId,
+                'error' => $process->getErrorOutput()
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 
         $jsonPath = storage_path("scans/{$this->reportId}/0.json");
 
         if (!file_exists($jsonPath)) {
+
+            Log::error('Local SEO JSON Ergebnis fehlt', [
+                'report_id' => $this->reportId,
+                'path' => $jsonPath
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 
         $data = json_decode(file_get_contents($jsonPath), true);
 
         if (!$data) {
+
+            Log::error('Local SEO JSON konnte nicht gelesen werden', [
+                'report_id' => $this->reportId
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 
@@ -492,7 +610,6 @@ use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Log;
 
-
 class RunMultiScan implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -508,7 +625,7 @@ class RunMultiScan implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('🔧 RunMultiScan gestartet', [
+        Log::info('RunMultiScan gestartet', [
             'scanId' => $this->scanId,
             'options' => $this->options
         ]);
@@ -523,10 +640,13 @@ class RunMultiScan implements ShouldQueue
         $process->setTimeout(null);
         $process->run();
 
-        Log::info('✅ Node-Prozess beendet', [
-            'output' => $process->getOutput(),
-            'error' => $process->getErrorOutput()
-        ]);
+        if (!$process->isSuccessful()) {
+
+            Log::error('MultiScanner Node Fehler', [
+                'scan_id' => $this->scanId,
+                'error' => $process->getErrorOutput()
+            ]);
+        }
     }
 }
 
@@ -561,9 +681,13 @@ class RunScan implements ShouldQueue
         $this->checks = $checks;
     }
 
-
     public function handle(): void
     {
+        Log::info('Multi Scan gestartet', [
+            'scan_id' => $this->scanId,
+            'checks' => $this->checks
+        ]);
+
         $scan = Scan::findOrFail($this->scanId);
 
         $scan->update(['status' => 'running']);
@@ -574,11 +698,6 @@ class RunScan implements ShouldQueue
             'maxPages' => config('tools.limits.max_urls_per_scan', 6),
         ];
 
-        Log::debug('🟠 Übergabe an Node-Prozess:', [
-            'scanId' => $this->scanId,
-            'options' => $options
-        ]);
-
         $process = new Process([
             'node',
             base_path('node-scanner/multiScanner.js'),
@@ -586,13 +705,7 @@ class RunScan implements ShouldQueue
             $this->scanId
         ]);
 
-
-
-        $process->start(); // ⏱️ Sofortiger Start – ohne Warten auf Output
-
-        // Done. Die Ausgabe-Dateien werden durch Node geschrieben.
-        // Wenn du willst, kannst du hier später einen zweiten Job triggern,
-        // der prüft, wann alles fertig ist – z. B. für DB-Eintrag oder Export.
+        $process->start();
     }
 }
 
@@ -897,6 +1010,8 @@ use App\Http\Controllers\CrawlerController;
 use App\Http\Controllers\LocalSeoController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\LogController;
+use App\Http\Controllers\QueueController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -936,6 +1051,17 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
     'finished_at' => $report->finished_at,
   ]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| LOGS & DEBUG
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
+Route::view('/logs/live', 'logs.live')->name('logs.live');
+Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
 
 
 === MODULE: VIEWS (BLADE) ===
@@ -1072,14 +1198,29 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
           @foreach(config('reports.types') as $type => $report)
           <a href="{{ route($report['route']) }}"
-            class="flex items-center {{ request()->routeIs($report['route']) ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             {{ $report['label'] }}
           </a>
           @endforeach
 
           <a href="{{ route('reports.index') }}"
-            class="flex items-center {{ request()->routeIs('reports.index') ? 'text-orange-600 font-semibold' : 'text-gray-700' }} hover:text-orange-600 transition">
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Reports
+          </a>
+
+          <a href="{{ route('logs.index') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Logs
+          </a>
+
+          <a href="{{ route('logs.live') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.live') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Live Logs
+          </a>
+
+          <a href="{{ route('queues.index') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('queues.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Queue Monitor
           </a>
 
         </nav>
@@ -1152,6 +1293,115 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 </div>
 
+@endsection
+
+
+
+----- resources/views/logs/index.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="space-y-6">
+  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900">System Logs</h1>
+        <p class="text-sm text-gray-500 mt-1">Recent application log events with visual severity indicators.</p>
+      </div>
+      <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 w-fit">
+        {{ count($entries) }} entries
+      </span>
+    </div>
+
+    <div class="mt-6 overflow-x-auto rounded-xl border border-gray-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="py-3 px-4">Timestamp</th>
+            <th class="py-3 px-4">Environment</th>
+            <th class="py-3 px-4">Level</th>
+            <th class="py-3 px-4">Message</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          @forelse($entries as $entry)
+          <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-orange-50 transition-colors">
+            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['timestamp'] }}</td>
+            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['environment'] }}</td>
+            <td class="py-3 px-4">
+              @php($level = strtoupper($entry['level']))
+              <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold
+                {{ $level === 'ERROR' ? 'bg-red-100 text-red-700 ring-1 ring-red-200' : '' }}
+                {{ $level === 'WARNING' ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200' : '' }}
+                {{ $level === 'INFO' ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' : '' }}
+                {{ $level === 'DEBUG' ? 'bg-gray-200 text-gray-700 ring-1 ring-gray-300' : '' }}
+                {{ !in_array($level, ['ERROR', 'WARNING', 'INFO', 'DEBUG']) ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' : '' }}">
+                {{ $entry['level'] }}
+              </span>
+            </td>
+            <td class="py-3 px-4">
+              <pre class="font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ $entry['message'] }}</pre>
+            </td>
+          </tr>
+          @empty
+          <tr>
+            <td colspan="4" class="py-8 px-4 text-center text-gray-500">No log entries found.</td>
+          </tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+@endsection
+
+
+
+----- resources/views/logs/live.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="space-y-6">
+  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900">Live Logs</h1>
+        <p class="text-sm text-gray-500 mt-1">Streaming view of incoming logs in a terminal-style console.</p>
+      </div>
+      <span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 w-fit">
+        Auto refresh: 2s
+      </span>
+    </div>
+
+    <div class="mt-6 rounded-xl border border-emerald-900/40 bg-[#050b12] p-4 shadow-inner">
+      <div id="live-log-console" class="h-[560px] overflow-y-auto rounded-lg bg-black/40 p-4 font-mono text-sm leading-relaxed text-emerald-300 whitespace-pre-wrap break-words"></div>
+    </div>
+  </section>
+</div>
+@endsection
+
+@section('scripts')
+<script>
+  const liveLogConsole = document.getElementById('live-log-console');
+
+  async function loadLogs() {
+    try {
+      const response = await fetch('/logs/raw');
+      const payload = await response.json();
+      const lines = payload.lines || [];
+
+      liveLogConsole.textContent = lines.join('');
+      liveLogConsole.scrollTop = liveLogConsole.scrollHeight;
+    } catch (error) {
+      liveLogConsole.textContent = 'Unable to load logs.';
+    }
+  }
+
+  loadLogs();
+  setInterval(loadLogs, 2000);
+</script>
 @endsection
 
 
@@ -1241,6 +1491,105 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
     @endforeach
   </tbody>
 </table>
+@endsection
+
+
+
+----- resources/views/queues/index.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="space-y-6">
+  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold text-gray-900">Queue Monitor</h1>
+        <p class="text-sm text-gray-500 mt-1">Operational overview of queued and failed background jobs.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
+          Queued: {{ count($jobs) }}
+        </span>
+        <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+          Failed: {{ count($failedJobs) }}
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-900">Queued Jobs</h2>
+      <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">Pending</span>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-gray-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="py-3 px-4">ID</th>
+            <th class="py-3 px-4">Queue</th>
+            <th class="py-3 px-4">Attempts</th>
+            <th class="py-3 px-4">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          @forelse($jobs as $job)
+          <tr class="odd:bg-white even:bg-gray-50 hover:bg-blue-50 transition-colors">
+            <td class="py-3 px-4 text-gray-800">{{ $job->id }}</td>
+            <td class="py-3 px-4 text-gray-700">{{ $job->queue }}</td>
+            <td class="py-3 px-4 text-gray-700">{{ $job->attempts }}</td>
+            <td class="py-3 px-4">
+              <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">Queued</span>
+            </td>
+          </tr>
+          @empty
+          <tr>
+            <td colspan="4" class="py-8 px-4 text-center text-gray-500">No queued jobs found.</td>
+          </tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-900">Failed Jobs</h2>
+      <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">Failed</span>
+    </div>
+
+    <div class="overflow-x-auto rounded-xl border border-gray-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+          <tr>
+            <th class="py-3 px-4">ID</th>
+            <th class="py-3 px-4">Status</th>
+            <th class="py-3 px-4">Exception</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+          @forelse($failedJobs as $failedJob)
+          <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-red-50 transition-colors">
+            <td class="py-3 px-4 text-gray-800">{{ $failedJob->id }}</td>
+            <td class="py-3 px-4">
+              <span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">Failed</span>
+            </td>
+            <td class="py-3 px-4">
+              <pre class="font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ $failedJob->exception }}</pre>
+            </td>
+          </tr>
+          @empty
+          <tr>
+            <td colspan="3" class="py-8 px-4 text-center text-gray-500">No failed jobs found.</td>
+          </tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
 @endsection
 
 
@@ -2149,352 +2498,3 @@ const path = require('path')
 
 const options = JSON.parse(process.argv[2])
 const reportId = process.argv[3]
-
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', reportId)
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true })
-}
-
-const progressPath = path.join(resultDir, 'progress.json')
-
-const updateProgress = (status) => {
-  fs.writeFileSync(progressPath, JSON.stringify({
-    current: 1,
-    total: 1,
-    status
-  }))
-}
-
-const rateScore = (score) => {
-  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
-  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
-  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
-  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
-}
-
-function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
-  let score = 0
-  const missing = []
-  const priorities = []
-
-  for (const rule in checks) {
-    if (checks[rule]) {
-      score += weights[rule] || 0
-    } else {
-      if (messages[rule]) {
-        missing.push(messages[rule])
-      }
-
-      if (priorityConfig[rule]) {
-        priorities.push({
-          code: `${moduleKey}_${rule}`,
-          severity: priorityConfig[rule].severity,
-          category: priorityConfig[rule].category,
-          message: messages[rule]
-        })
-      }
-    }
-  }
-
-  const max = Object.values(weights).reduce((a, b) => a + b, 0)
-
-  return {
-    score,
-    max,
-    checks,
-    weights,
-    missing,
-    priorities
-  }
-}
-
-; (async () => {
-
-  updateProgress('running')
-
-  const browser = await puppeteer.launch({ headless: true })
-  const page = await browser.newPage()
-
-  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-
-  const title = await page.title()
-  const h1 = await page.$$eval('h1', els => els.map(e => e.innerText))
-  const bodyText = await page.evaluate(() => document.body.innerText)
-
-  const jsonLd = await page.$$eval(
-    'script[type="application/ld+json"]',
-    scripts => scripts.map(s => s.innerText)
-  )
-
-  const keyword = options.keyword.toLowerCase()
-  const city = options.city.toLowerCase()
-
-  let score = 0
-  let priorities = []
-  const breakdown = {}
-
-  // ================= TITLE =================
-
-  const titleLower = title.toLowerCase()
-
-  const titleResult = evaluateModule(
-    'title',
-    {
-      keyword_present: titleLower.includes(keyword),
-      city_present: titleLower.includes(city),
-      keyword_city_combination:
-        titleLower.includes(`${keyword} ${city}`) ||
-        titleLower.includes(`${city} ${keyword}`)
-    },
-    {
-      keyword_present: 10,
-      city_present: 10,
-      keyword_city_combination: 5
-    },
-    {
-      keyword_present: 'Keyword fehlt im Title',
-      city_present: 'Stadt fehlt im Title',
-      keyword_city_combination: 'Keyword + Stadt Kombination fehlt'
-    },
-    {
-      keyword_present: { severity: 'high', category: 'title' },
-      city_present: { severity: 'medium', category: 'title' }
-    }
-  )
-
-  breakdown.title = titleResult
-  score += titleResult.score
-  priorities = priorities.concat(titleResult.priorities)
-
-  // ================= H1 =================
-
-  const h1Text = h1.join(' ').toLowerCase()
-
-  const h1Result = evaluateModule(
-    'h1',
-    {
-      exists: h1.length > 0,
-      keyword_present: h1Text.includes(keyword),
-      city_present: h1Text.includes(city)
-    },
-    {
-      exists: 5,
-      keyword_present: 8,
-      city_present: 7
-    },
-    {
-      exists: 'Keine H1 vorhanden',
-      keyword_present: 'Keyword nicht in H1 enthalten',
-      city_present: 'Stadt nicht in H1 enthalten'
-    },
-    {
-      exists: { severity: 'high', category: 'headings' }
-    }
-  )
-
-  breakdown.h1 = h1Result
-  score += h1Result.score
-  priorities = priorities.concat(h1Result.priorities)
-
-  // ================= SCHEMA =================
-
-  let hasLocalBusiness = false
-  let hasAddress = false
-  let hasPhone = false
-
-  jsonLd.forEach(block => {
-    try {
-      const parsed = JSON.parse(block)
-      const data = Array.isArray(parsed) ? parsed : [parsed]
-
-      data.forEach(item => {
-        if (item['@type'] && item['@type'].toLowerCase().includes('localbusiness')) {
-          hasLocalBusiness = true
-          if (item.address) hasAddress = true
-          if (item.telephone) hasPhone = true
-        }
-      })
-    } catch { }
-  })
-
-  const schemaResult = evaluateModule(
-    'schema',
-    {
-      has_localbusiness: hasLocalBusiness,
-      has_address: hasAddress,
-      has_phone: hasPhone
-    },
-    {
-      has_localbusiness: 10,
-      has_address: 5,
-      has_phone: 5
-    },
-    {
-      has_localbusiness: 'LocalBusiness Schema fehlt',
-      has_address: 'Adresse fehlt im Schema',
-      has_phone: 'Telefonnummer fehlt im Schema'
-    },
-    {
-      has_localbusiness: { severity: 'high', category: 'schema' },
-      has_phone: { severity: 'medium', category: 'schema' }
-    }
-  )
-
-  breakdown.schema = schemaResult
-  score += schemaResult.score
-  priorities = priorities.concat(schemaResult.priorities)
-
-  // ================= NAP =================
-
-  const hasPhoneInHtml = bodyText.match(/\+?\d[\d\s\-\/]{6,}/)
-  const hasCityInHtml = bodyText.includes(city)
-
-  const napResult = evaluateModule(
-    'nap',
-    {
-      phone_present: !!hasPhoneInHtml,
-      city_present: hasCityInHtml
-    },
-    {
-      phone_present: 10,
-      city_present: 10
-    },
-    {
-      phone_present: 'Telefonnummer nicht im sichtbaren Inhalt gefunden',
-      city_present: 'Stadt nicht im Content gefunden'
-    },
-    {
-      phone_present: { severity: 'medium', category: 'nap' }
-    }
-  )
-
-  breakdown.nap = napResult
-  score += napResult.score
-  priorities = priorities.concat(napResult.priorities)
-
-  const result = {
-    dimension: 'local_seo',
-    score,
-    max_score: 100,
-    rating: rateScore(score),
-    breakdown,
-    priorities
-  }
-
-  fs.writeFileSync(
-    path.join(resultDir, '0.json'),
-    JSON.stringify(result, null, 2)
-  )
-
-  updateProgress('done')
-  await browser.close()
-
-})()
-
-
-
------ node-scanner/multiScanner.js -----
-
-const puppeteer = require('puppeteer');
-const altCheck = require('./checks/altCheck');
-const headingCheck = require('./checks/headingCheck');
-const statusCheck = require('./checks/statusCheck');
-const { collectUniqueUrls } = require('./utils/urlUtils');
-const fs = require('fs');
-const path = require('path');
-
-let options;
-try {
-  options = JSON.parse(process.argv[2]);
-} catch (err) {
-  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
-  process.exit(1);
-}
-
-const scanId = process.argv[3];
-const resultDir = path.resolve(__dirname, '..', 'storage', 'scans', scanId);
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true });
-}
-
-(async () => {
-  const browser = await puppeteer.launch({ headless: true });
-  const maxPages = options.maxPages || 20;
-  const maxConcurrency = 3;
-  const abortPath = path.resolve(__dirname, '..', 'storage', 'app', `abort-${scanId}.flag`);
-
-  const page = await browser.newPage();
-  await page.setRequestInterception(true);
-  page.on('request', (req) => {
-    const type = req.resourceType();
-    if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-      req.abort();
-    } else {
-      req.continue();
-    }
-  });
-
-  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-
-  const hrefs = await page.$$eval('a[href]', links =>
-    links
-      .map(link => link.getAttribute('href'))
-      .filter(Boolean)
-      .filter(href => !href.startsWith('#'))
-      .filter(href => !href.startsWith('mailto:'))
-      .filter(href => !href.startsWith('tel:'))
-      .filter(href => !href.startsWith('javascript:'))
-  );
-
-  const absoluteUrls = collectUniqueUrls(options.url, hrefs).slice(0, maxPages);
-  await page.close();
-
-  fs.writeFileSync(
-    path.join(resultDir, `progress.json`),
-    JSON.stringify({ current: 0, total: absoluteUrls.length, status: 'running' })
-  );
-
-  let currentIndex = 0;
-
-  const runTask = async (url, position) => {
-    const page = await browser.newPage();
-
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    let result = { url };
-
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-      result.title = await page.title();
-
-      if (options.checks.includes('status')) {
-        result.statusCheck = await statusCheck(page, url);
-      }
-
-      if (options.checks.includes('alt')) {
-        result.altCheck = await altCheck(page);
-      }
-
-      if (options.checks.includes('heading')) {
-        result.headingCheck = await headingCheck(page);
-      }
-
-    } catch (err) {
-      result.error = err.message;
-    }
-
-    fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
-
-    const newCurrent = position + 1;
-
-    fs.writeFileSync(
-      path.join(resultDir, `progress.json`),
-      JSON.stringify({

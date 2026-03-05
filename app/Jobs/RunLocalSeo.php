@@ -48,7 +48,7 @@ class RunLocalSeo implements ShouldQueue
 
         $process = new \Symfony\Component\Process\Process([
             'node',
-            base_path('node-scanner/localSeoScanner.js'),
+            base_path('node-scanner/core/localSeoScanner.js'),
             json_encode($options),
             $this->reportId
         ]);

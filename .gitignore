@@ -6,6 +6,7 @@
 .phpactor.json
 .phpunit.result.cache
 .history/
+.history
 /.fleet
 /.idea
 /.nova
@@ -25,3 +26,4 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /node-scanner/node_modules
+/tools
