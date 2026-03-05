@@ -21,9 +21,11 @@
 /storage/*.key
 /storage/pail
 /storage/scans/
+/storage/logs/
 /vendor
 Homestead.json
 Homestead.yaml
 Thumbs.db
 /node-scanner/node_modules
 /tools
+/tools/
