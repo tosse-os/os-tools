@@ -25,9 +25,13 @@ class RunScan implements ShouldQueue
         $this->checks = $checks;
     }
 
-
     public function handle(): void
     {
+        Log::info('Multi Scan gestartet', [
+            'scan_id' => $this->scanId,
+            'checks' => $this->checks
+        ]);
+
         $scan = Scan::findOrFail($this->scanId);
 
         $scan->update(['status' => 'running']);
@@ -38,11 +42,6 @@ class RunScan implements ShouldQueue
             'maxPages' => config('tools.limits.max_urls_per_scan', 6),
         ];
 
-        Log::debug('🟠 Übergabe an Node-Prozess:', [
-            'scanId' => $this->scanId,
-            'options' => $options
-        ]);
-
         $process = new Process([
             'node',
             base_path('node-scanner/multiScanner.js'),
@@ -50,12 +49,6 @@ class RunScan implements ShouldQueue
             $this->scanId
         ]);
 
-
-
-        $process->start(); // ⏱️ Sofortiger Start – ohne Warten auf Output
-
-        // Done. Die Ausgabe-Dateien werden durch Node geschrieben.
-        // Wenn du willst, kannst du hier später einen zweiten Job triggern,
-        // der prüft, wann alles fertig ist – z. B. für DB-Eintrag oder Export.
+        $process->start();
     }
 }

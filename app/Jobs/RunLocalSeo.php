@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Log;
 
 class RunLocalSeo implements ShouldQueue
 {
@@ -26,6 +27,12 @@ class RunLocalSeo implements ShouldQueue
 
     public function handle(): void
     {
+        Log::info('Local SEO Job gestartet', [
+            'report_id' => $this->reportId,
+            'keyword' => $this->keyword,
+            'city' => $this->city
+        ]);
+
         $report = \App\Models\Report::findOrFail($this->reportId);
 
         $report->update([
@@ -50,30 +57,50 @@ class RunLocalSeo implements ShouldQueue
         $process->run();
 
         if (!$process->isSuccessful()) {
+
+            Log::error('Local SEO Node Prozess fehlgeschlagen', [
+                'report_id' => $this->reportId,
+                'error' => $process->getErrorOutput()
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 
         $jsonPath = storage_path("scans/{$this->reportId}/0.json");
 
         if (!file_exists($jsonPath)) {
+
+            Log::error('Local SEO JSON Ergebnis fehlt', [
+                'report_id' => $this->reportId,
+                'path' => $jsonPath
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 
         $data = json_decode(file_get_contents($jsonPath), true);
 
         if (!$data) {
+
+            Log::error('Local SEO JSON konnte nicht gelesen werden', [
+                'report_id' => $this->reportId
+            ]);
+
             $report->update([
                 'status' => 'aborted',
                 'finished_at' => now(),
             ]);
+
             return;
         }
 

@@ -10,7 +10,6 @@ use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Log;
 
-
 class RunMultiScan implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
@@ -26,7 +25,7 @@ class RunMultiScan implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('🔧 RunMultiScan gestartet', [
+        Log::info('RunMultiScan gestartet', [
             'scanId' => $this->scanId,
             'options' => $this->options
         ]);
@@ -41,9 +40,12 @@ class RunMultiScan implements ShouldQueue
         $process->setTimeout(null);
         $process->run();
 
-        Log::info('✅ Node-Prozess beendet', [
-            'output' => $process->getOutput(),
-            'error' => $process->getErrorOutput()
-        ]);
+        if (!$process->isSuccessful()) {
+
+            Log::error('MultiScanner Node Fehler', [
+                'scan_id' => $this->scanId,
+                'error' => $process->getErrorOutput()
+            ]);
+        }
     }
 }
