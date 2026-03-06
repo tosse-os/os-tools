@@ -8,11 +8,24 @@
     $reportList = collect($reports ?? [])->take(4)->values();
     $reportCount = $reportList->count();
 
-    $domain = '';
-    if ($reportCount > 0) {
-        $firstUrl = (string) ($reportList[0]->url ?? '');
-        $domain = parse_url($firstUrl, PHP_URL_HOST) ?: $firstUrl;
-    }
+    $contextRows = $reportList->map(function ($report) {
+        $keyword = $report->keyword ?: '—';
+        $city = $report->city ?: '—';
+        $domain = parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—';
+
+        return [
+            'keyword' => $keyword,
+            'city' => $city,
+            'domain' => $domain,
+        ];
+    });
+
+    $keywords = $contextRows->pluck('keyword')->unique()->values();
+    $cities = $contextRows->pluck('city')->unique()->values();
+    $domains = $contextRows->pluck('domain')->unique()->values();
+
+    $sameKeywordAndCity = $keywords->count() <= 1 && $cities->count() <= 1;
+    $domain = $domains->count() === 1 ? $domains->first() : '—';
 
     $gridCols = [
         1 => 'grid-cols-1',
@@ -31,12 +44,15 @@
             $overallMax += (int) ($module['max_score'] ?? 0);
         }
 
-        $scoreValue = isset($report->score) ? (int) $report->score : $overallScore;
-        $percent = $overallMax > 0
+        $scoreValue = isset($report->score) && is_numeric($report->score) ? (float) $report->score : (float) $overallScore;
+        $rawPercent = $overallMax > 0
             ? (int) round(($overallScore / $overallMax) * 100)
-            : max(0, min(100, $scoreValue));
+            : (int) round($scoreValue);
+        $percent = (int) max(0, min(100, $rawPercent));
 
-        $startedAt = $report->started_at;
+        $startedAt = $report->started_at && strtotime((string) $report->started_at) !== false
+            ? Carbon::parse($report->started_at)
+            : null;
 
         return [
             'id' => $report->id,
@@ -45,9 +61,10 @@
             'overall_score' => $overallScore,
             'overall_max' => $overallMax,
             'percent' => $percent,
-            'started_at' => $startedAt && strtotime((string) $startedAt) !== false
-                ? Carbon::parse($startedAt)
-                : null,
+            'started_at' => $startedAt,
+            'keyword' => $report->keyword ?: '—',
+            'city' => $report->city ?: '—',
+            'domain' => parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—',
         ];
     })->values();
 @endphp
@@ -60,21 +77,35 @@
 
     <div class="flex items-center gap-3 text-sm">
         <a href="{{ route('reports.compare', array_merge($compareQuery, ['mode' => 'modules'])) }}"
-            class="rounded px-3 py-1.5 {{ $mode === 'modules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
+            class="rounded-lg px-3 py-1.5 {{ $mode === 'modules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
             Module Comparison
         </a>
 
         <a href="{{ route('reports.compare', array_merge($compareQuery, ['mode' => 'delta'])) }}"
-            class="rounded px-3 py-1.5 {{ $mode === 'delta' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
+            class="rounded-lg px-3 py-1.5 {{ $mode === 'delta' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
             Score Difference
         </a>
     </div>
 
-    <div class="rounded-lg border border-gray-200 p-6 bg-gray-50 space-y-5">
+    <div class="rounded-lg border border-gray-200 p-6 bg-gray-50 space-y-2 shadow">
+        <h2 class="text-lg font-semibold text-gray-900">Scan Context</h2>
+        <p class="text-sm text-gray-700">Keyword: <span class="font-medium">{{ $keywords->count() === 1 ? $keywords->first() : $keywords->implode(' / ') }}</span></p>
+        <p class="text-sm text-gray-700">City: <span class="font-medium">{{ $cities->count() === 1 ? $cities->first() : $cities->implode(' / ') }}</span></p>
+        <p class="text-sm text-gray-700">Domain: <span class="font-medium">{{ $domain !== '—' ? $domain : $domains->implode(' / ') }}</span></p>
+
+        @if(!$sameKeywordAndCity)
+            <div class="rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+                ⚠ These reports use different keywords or cities.<br>
+                Comparison may not be meaningful.
+            </div>
+        @endif
+
+        <p class="text-sm text-gray-600">Comparing {{ $reportCount }} {{ Str::plural('scan', $reportCount) }}</p>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 p-6 bg-gray-50 space-y-5 shadow">
         <div>
             <h2 class="text-lg font-semibold text-gray-900">Scan History Comparison</h2>
-            <p class="text-sm text-gray-600 mt-1">Domain: <span class="font-medium text-gray-800">{{ $domain ?: '—' }}</span></p>
-            <p class="text-sm text-gray-600">Comparing {{ $reportCount }} {{ Str::plural('scan', $reportCount) }}</p>
         </div>
 
         <div class="grid {{ $gridCols }} gap-4">
@@ -97,18 +128,14 @@
                         }
                     }
                 @endphp
-                <div class="rounded-lg shadow border border-gray-200 p-4 bg-white space-y-3">
-                    <p class="text-sm text-gray-600">Scan Date</p>
-                    <p class="text-base font-semibold text-gray-900">
-                        {{ $summary['started_at'] ? $summary['started_at']->format('d M Y') : '—' }}
-                    </p>
-                    <p class="text-sm text-gray-600">
-                        {{ $summary['started_at'] ? $summary['started_at']->format('H:i') : '—' }}
-                    </p>
+                <div class="rounded-lg shadow border border-gray-200 p-4 bg-white space-y-2 text-sm">
+                    <p class="font-semibold text-gray-900">{{ $summary['keyword'] }} • {{ $summary['city'] }}</p>
+                    <p class="text-gray-700">{{ $summary['domain'] }}</p>
+                    <p class="text-xs text-gray-500">{{ $summary['started_at'] ? $summary['started_at']->format('d.m.Y H:i') : '—' }}</p>
 
                     <div>
-                        <p class="text-sm text-gray-600">SEO Score</p>
-                        <p class="text-lg font-semibold text-gray-900">{{ $summary['score'] }} / 100</p>
+                        <p class="text-xs text-gray-600">Score: {{ number_format($summary['score'], 0) }} / 100</p>
+                        <p class="text-lg font-semibold text-gray-900">{{ number_format($summary['score'], 2) }}</p>
                     </div>
 
                     <div class="w-full bg-gray-200 h-2 rounded overflow-hidden">
@@ -184,7 +211,7 @@
                         @foreach($reportSummaries as $summary)
                             <th class="px-4 py-3 border-b whitespace-nowrap">
                                 <div class="font-medium text-gray-900">{{ $summary['started_at'] ? $summary['started_at']->format('d M') : '—' }}</div>
-                                <div class="text-xs text-gray-500">{{ $summary['score'] }}/100</div>
+                                <div class="text-xs text-gray-500">{{ number_format($summary['score'], 0) }}/100</div>
                             </th>
                         @endforeach
                     </tr>
