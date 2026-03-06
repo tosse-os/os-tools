@@ -5,7 +5,26 @@
     use Carbon\Carbon;
     use Illuminate\Support\Str;
 
-    $reportList = collect($reports ?? [])->take(4)->values();
+    $parseStartedAt = static function ($value) {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    };
+
+    $reportList = collect($reports ?? [])
+        ->sortByDesc(function ($report) use ($parseStartedAt) {
+            $parsedDate = $parseStartedAt($report->started_at ?? null);
+
+            return $parsedDate ? $parsedDate->timestamp : PHP_INT_MIN;
+        })
+        ->take(4)
+        ->values();
     $reportCount = $reportList->count();
 
     $contextRows = $reportList->map(function ($report) {
@@ -24,7 +43,13 @@
     $cities = $contextRows->pluck('city')->unique()->values();
     $domains = $contextRows->pluck('domain')->unique()->values();
 
+    $urls = $reportList->map(function ($report) {
+        return (string) ($report->url ?? '');
+    })->unique()->values();
+
     $sameKeywordAndCity = $keywords->count() <= 1 && $cities->count() <= 1;
+    $sameUrl = $urls->count() <= 1;
+    $hasComparisonMismatch = !($sameKeywordAndCity && $sameUrl);
     $domain = $domains->count() === 1 ? $domains->first() : '—';
 
     $gridCols = [
@@ -44,15 +69,23 @@
             $overallMax += (int) ($module['max_score'] ?? 0);
         }
 
-        $scoreValue = isset($report->score) && is_numeric($report->score) ? (float) $report->score : (float) $overallScore;
+        $hasModuleScores = $overallMax > 0;
+        $reportScore = isset($report->score) && is_numeric($report->score) ? (float) $report->score : 0.0;
+        $scoreValue = $hasModuleScores ? (float) $overallScore : $reportScore;
         $rawPercent = $overallMax > 0
             ? (int) round(($overallScore / $overallMax) * 100)
             : (int) round($scoreValue);
         $percent = (int) max(0, min(100, $rawPercent));
 
-        $startedAt = $report->started_at && strtotime((string) $report->started_at) !== false
-            ? Carbon::parse($report->started_at)
-            : null;
+        $startedAt = null;
+
+        if (!blank($report->started_at)) {
+            try {
+                $startedAt = Carbon::parse($report->started_at);
+            } catch (\Throwable $e) {
+                $startedAt = null;
+            }
+        }
 
         return [
             'id' => $report->id,
@@ -60,6 +93,7 @@
             'score' => $scoreValue,
             'overall_score' => $overallScore,
             'overall_max' => $overallMax,
+            'has_module_scores' => $hasModuleScores,
             'percent' => $percent,
             'started_at' => $startedAt,
             'keyword' => $report->keyword ?: '—',
@@ -93,7 +127,7 @@
         <p class="text-sm text-gray-700">City: <span class="font-medium">{{ $cities->count() === 1 ? $cities->first() : $cities->implode(' / ') }}</span></p>
         <p class="text-sm text-gray-700">Domain: <span class="font-medium">{{ $domain !== '—' ? $domain : $domains->implode(' / ') }}</span></p>
 
-        @if(!$sameKeywordAndCity)
+        @if($hasComparisonMismatch)
             <div class="rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
                 ⚠ These reports use different keywords or cities.<br>
                 Comparison may not be meaningful.
@@ -134,8 +168,14 @@
                     <p class="text-xs text-gray-500">{{ $summary['started_at'] ? $summary['started_at']->format('d.m.Y H:i') : '—' }}</p>
 
                     <div>
-                        <p class="text-xs text-gray-600">Score: {{ number_format($summary['score'], 0) }} / 100</p>
-                        <p class="text-lg font-semibold text-gray-900">{{ number_format($summary['score'], 2) }}</p>
+                        <p class="text-xs text-gray-600">
+                            @if($summary['has_module_scores'])
+                                Score: {{ $summary['overall_score'] }} / {{ $summary['overall_max'] }}
+                            @else
+                                Score: {{ number_format($summary['score'], 0) }} / 100
+                            @endif
+                        </p>
+                        <p class="text-lg font-semibold text-gray-900">{{ $summary['percent'] }}%</p>
                     </div>
 
                     <div class="w-full bg-gray-200 h-2 rounded overflow-hidden">
