@@ -3,6 +3,7 @@
 @section('content')
 @php
     use Carbon\Carbon;
+    use Illuminate\Support\Str;
 
     $reportList = collect($reports ?? [])->take(4)->values();
     $reportCount = $reportList->count();
@@ -73,7 +74,7 @@
         <div>
             <h2 class="text-lg font-semibold text-gray-900">Scan History Comparison</h2>
             <p class="text-sm text-gray-600 mt-1">Domain: <span class="font-medium text-gray-800">{{ $domain ?: '—' }}</span></p>
-            <p class="text-sm text-gray-600">Comparing {{ $reportCount }} {{ \\Illuminate\\Support\\Str::plural('scan', $reportCount) }}</p>
+            <p class="text-sm text-gray-600">Comparing {{ $reportCount }} {{ Str::plural('scan', $reportCount) }}</p>
         </div>
 
         <div class="grid {{ $gridCols }} gap-4">
