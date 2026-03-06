@@ -27,6 +27,54 @@ const rateScore = (score) => {
   return { level: 'excellent', label: 'Sehr gut', color: 'green' }
 }
 
+function normalizeText(input) {
+  if (!input) return ''
+
+  return String(input)
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function createWordBoundaryRegex(term) {
+  const escapedTerm = escapeRegExp(term)
+  return new RegExp(`(^|[^a-z0-9])${escapedTerm}([^a-z0-9]|$)`, 'i')
+}
+
+function buildCityVariants(cityInput) {
+  const normalizedCity = normalizeText(cityInput)
+  const variants = new Set([normalizedCity])
+
+  variants.add(
+    normalizedCity
+      .replace(/ae/g, 'a')
+      .replace(/oe/g, 'o')
+      .replace(/ue/g, 'u')
+  )
+
+  return Array.from(variants).filter(Boolean)
+}
+
+function hasTermWithBoundaries(text, term) {
+  if (!term) return false
+  return createWordBoundaryRegex(term).test(text)
+}
+
+function hasCityMatch(text, cityVariants) {
+  return cityVariants.some(cityVariant => hasTermWithBoundaries(text, cityVariant))
+}
+
 function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
   let score = 0
   const missing = []
@@ -81,8 +129,11 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
     scripts => scripts.map(s => s.innerText)
   )
 
-  const keyword = options.keyword.toLowerCase()
-  const city = options.city.toLowerCase()
+  const normalizedTitle = normalizeText(title)
+  const normalizedH1Text = normalizeText(h1.join(' '))
+  const normalizedBodyText = normalizeText(bodyText)
+  const normalizedKeyword = normalizeText(options.keyword)
+  const cityVariants = buildCityVariants(options.city)
 
   let score = 0
   let priorities = []
@@ -90,16 +141,14 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
   // ================= TITLE =================
 
-  const titleLower = title.toLowerCase()
-
   const titleResult = evaluateModule(
     'title',
     {
-      keyword_present: titleLower.includes(keyword),
-      city_present: titleLower.includes(city),
+      keyword_present: normalizedTitle.includes(normalizedKeyword),
+      city_present: hasCityMatch(normalizedTitle, cityVariants),
       keyword_city_combination:
-        titleLower.includes(`${keyword} ${city}`) ||
-        titleLower.includes(`${city} ${keyword}`)
+        cityVariants.some(cityVariant => normalizedTitle.includes(`${normalizedKeyword} ${cityVariant}`)) ||
+        cityVariants.some(cityVariant => normalizedTitle.includes(`${cityVariant} ${normalizedKeyword}`))
     },
     {
       keyword_present: 10,
@@ -123,14 +172,12 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
   // ================= H1 =================
 
-  const h1Text = h1.join(' ').toLowerCase()
-
   const h1Result = evaluateModule(
     'h1',
     {
       exists: h1.length > 0,
-      keyword_present: h1Text.includes(keyword),
-      city_present: h1Text.includes(city)
+      keyword_present: normalizedH1Text.includes(normalizedKeyword),
+      city_present: hasCityMatch(normalizedH1Text, cityVariants)
     },
     {
       exists: 5,
@@ -201,22 +248,30 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
   // ================= NAP =================
 
-  const hasPhoneInHtml = bodyText.match(/\+?\d[\d\s\-\/]{6,}/)
-  const hasCityInHtml = bodyText.includes(city)
+  const germanPhoneRegex = /(?:\+49|0)\s*\(?\d{2,5}\)?(?:[\s\-\/]*\d{2,}){2,}/
+  const streetAddressRegex = /\b[a-z][a-z\s\-]{2,}(?:strasse|str\.?|weg|allee|platz|gasse|ring|ufer|chaussee|damm)\s+\d{1,4}[a-z]?(?:\s*[-\/]\s*\d{1,4}[a-z]?)?\b/
+  const zipCityRegex = /\b\d{5}\s+[a-z][a-z\s\-]{1,}\b/
+
+  const hasPhoneInHtml = germanPhoneRegex.test(normalizedBodyText)
+  const hasCityInHtml = hasCityMatch(normalizedBodyText, cityVariants)
+  const hasAddressInHtml = streetAddressRegex.test(normalizedBodyText) || zipCityRegex.test(normalizedBodyText)
 
   const napResult = evaluateModule(
     'nap',
     {
-      phone_present: !!hasPhoneInHtml,
-      city_present: hasCityInHtml
+      phone_present: hasPhoneInHtml,
+      city_present: hasCityInHtml,
+      address_present: hasAddressInHtml
     },
     {
-      phone_present: 10,
-      city_present: 10
+      phone_present: 8,
+      city_present: 8,
+      address_present: 4
     },
     {
       phone_present: 'Telefonnummer nicht im sichtbaren Inhalt gefunden',
-      city_present: 'Stadt nicht im Content gefunden'
+      city_present: 'Stadt nicht im Content gefunden',
+      address_present: 'Adresse nicht im Content gefunden'
     },
     {
       phone_present: { severity: 'medium', category: 'nap' }
