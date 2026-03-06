@@ -75,6 +75,88 @@ function hasCityMatch(text, cityVariants) {
   return cityVariants.some(cityVariant => hasTermWithBoundaries(text, cityVariant))
 }
 
+function buildTitleLocalPatterns(keyword, cityVariants) {
+  const escapedKeyword = escapeRegExp(keyword)
+
+  return cityVariants.map(city => {
+    const escapedCity = escapeRegExp(city)
+
+    return {
+      serviceCity: new RegExp(`(^|[^a-z0-9])${escapedKeyword}(?:\s+[a-z0-9\-]+){0,2}\s+(?:in\s+)?${escapedCity}([^a-z0-9]|$)`, 'i'),
+      cityKeyword: new RegExp(`(^|[^a-z0-9])${escapedCity}\s+(?:[a-z0-9\-]+\s+){0,2}${escapedKeyword}([^a-z0-9]|$)`, 'i')
+    }
+  })
+}
+
+function hasTitlePattern(text, patternSets, patternType) {
+  return patternSets.some(patternSet => patternSet[patternType].test(text))
+}
+
+function buildLocalIntentPatterns(keyword, cityVariants) {
+  const escapedKeyword = escapeRegExp(keyword)
+
+  return cityVariants.map(city => {
+    const escapedCity = escapeRegExp(city)
+
+    return [
+      new RegExp(`(^|[^a-z0-9])${escapedKeyword}(?:\s+[a-z0-9\-]+){0,2}\s+(?:in\s+)?${escapedCity}([^a-z0-9]|$)`, 'i'),
+      new RegExp(`(^|[^a-z0-9])(?:ihr(?:e|er|en)?\s+)?${escapedKeyword}(?:\s+[a-z0-9\-]+){0,2}\s+(?:in\s+)?${escapedCity}([^a-z0-9]|$)`, 'i')
+    ]
+  }).flat()
+}
+
+function hasPatternMatch(text, patterns) {
+  return patterns.some(pattern => pattern.test(text))
+}
+
+function toSchemaItems(value) {
+  if (!value) return []
+
+  if (Array.isArray(value)) {
+    return value.flatMap(item => toSchemaItems(item))
+  }
+
+  if (value['@graph'] && Array.isArray(value['@graph'])) {
+    return value['@graph'].flatMap(item => toSchemaItems(item))
+  }
+
+  return [value]
+}
+
+function extractLocalEntities(normalizedText) {
+  const postalCodeRegex = /\b\d{5}\b/g
+  const streetRegex = /\b[a-zäöü][a-zäöüß\-]{2,}\s+\d{1,4}[a-z]?\b/gi
+  const zipCityRegex = /\b(\d{5})\s+([a-zäöü][a-zäöüß\-]+(?:\s+[a-zäöü][a-zäöüß\-]+)?)\b/gi
+
+  const postalCodes = Array.from(new Set(normalizedText.match(postalCodeRegex) || []))
+  const streets = Array.from(new Set((normalizedText.match(streetRegex) || []).map(match => normalizeText(match))))
+
+  const cities = new Set()
+  let zipCityMatch
+
+  while ((zipCityMatch = zipCityRegex.exec(normalizedText)) !== null) {
+    cities.add(normalizeText(zipCityMatch[2]))
+  }
+
+  return {
+    postalCodes,
+    streets,
+    cities: Array.from(cities)
+  }
+}
+
+function countCityMentions(normalizedText, cities) {
+  const detected = new Set()
+
+  cities.forEach(city => {
+    if (hasTermWithBoundaries(normalizedText, city)) {
+      detected.add(city)
+    }
+  })
+
+  return detected.size
+}
+
 function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
   let score = 0
   const missing = []
@@ -122,7 +204,11 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
   const title = await page.title()
   const h1 = await page.$$eval('h1', els => els.map(e => e.innerText))
-  const bodyText = await page.evaluate(() => document.body.innerText)
+  const bodyText = await page.evaluate(() => {
+    const clone = document.body.cloneNode(true)
+    clone.querySelectorAll('script, style, noscript, template').forEach(el => el.remove())
+    return clone.innerText || ''
+  })
 
   const jsonLd = await page.$$eval(
     'script[type="application/ld+json"]',
@@ -135,6 +221,9 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   const normalizedKeyword = normalizeText(options.keyword)
   const cityVariants = buildCityVariants(options.city)
 
+  const titlePatternSets = buildTitleLocalPatterns(normalizedKeyword, cityVariants)
+  const h1LocalIntentPatterns = buildLocalIntentPatterns(normalizedKeyword, cityVariants)
+
   let score = 0
   let priorities = []
   const breakdown = {}
@@ -144,21 +233,27 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   const titleResult = evaluateModule(
     'title',
     {
-      keyword_present: normalizedTitle.includes(normalizedKeyword),
+      keyword_present: hasTermWithBoundaries(normalizedTitle, normalizedKeyword),
       city_present: hasCityMatch(normalizedTitle, cityVariants),
       keyword_city_combination:
         cityVariants.some(cityVariant => normalizedTitle.includes(`${normalizedKeyword} ${cityVariant}`)) ||
-        cityVariants.some(cityVariant => normalizedTitle.includes(`${cityVariant} ${normalizedKeyword}`))
+        cityVariants.some(cityVariant => normalizedTitle.includes(`${cityVariant} ${normalizedKeyword}`)),
+      service_city_pattern: hasTitlePattern(normalizedTitle, titlePatternSets, 'serviceCity'),
+      city_keyword_pattern: hasTitlePattern(normalizedTitle, titlePatternSets, 'cityKeyword')
     },
     {
-      keyword_present: 10,
-      city_present: 10,
-      keyword_city_combination: 5
+      keyword_present: 7,
+      city_present: 6,
+      keyword_city_combination: 4,
+      service_city_pattern: 4,
+      city_keyword_pattern: 4
     },
     {
       keyword_present: 'Keyword fehlt im Title',
       city_present: 'Stadt fehlt im Title',
-      keyword_city_combination: 'Keyword + Stadt Kombination fehlt'
+      keyword_city_combination: 'Keyword + Stadt Kombination fehlt',
+      service_city_pattern: 'Service + Stadt Muster fehlt im Title',
+      city_keyword_pattern: 'Stadt + Service Muster fehlt im Title'
     },
     {
       keyword_present: { severity: 'high', category: 'title' },
@@ -176,21 +271,25 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
     'h1',
     {
       exists: h1.length > 0,
-      keyword_present: normalizedH1Text.includes(normalizedKeyword),
-      city_present: hasCityMatch(normalizedH1Text, cityVariants)
+      keyword_present: hasTermWithBoundaries(normalizedH1Text, normalizedKeyword),
+      city_present: hasCityMatch(normalizedH1Text, cityVariants),
+      local_intent_present: hasPatternMatch(normalizedH1Text, h1LocalIntentPatterns)
     },
     {
       exists: 5,
-      keyword_present: 8,
-      city_present: 7
+      keyword_present: 6,
+      city_present: 4,
+      local_intent_present: 5
     },
     {
       exists: 'Keine H1 vorhanden',
       keyword_present: 'Keyword nicht in H1 enthalten',
-      city_present: 'Stadt nicht in H1 enthalten'
+      city_present: 'Stadt nicht in H1 enthalten',
+      local_intent_present: 'Lokale Suchintention fehlt in H1'
     },
     {
-      exists: { severity: 'high', category: 'headings' }
+      exists: { severity: 'high', category: 'headings' },
+      local_intent_present: { severity: 'medium', category: 'headings' }
     }
   )
 
@@ -203,20 +302,60 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   let hasLocalBusiness = false
   let hasAddress = false
   let hasPhone = false
+  let hasGeo = false
+  let hasAreaServed = false
+  let hasOpeningHours = false
+  let hasSameAs = false
+  let schemaCityDetected = false
 
   jsonLd.forEach(block => {
     try {
       const parsed = JSON.parse(block)
-      const data = Array.isArray(parsed) ? parsed : [parsed]
+      const data = toSchemaItems(parsed)
 
       data.forEach(item => {
-        if (item['@type'] && item['@type'].toLowerCase().includes('localbusiness')) {
+        const typeValue = normalizeText(item['@type'] || '')
+
+        if (typeValue.includes('localbusiness')) {
           hasLocalBusiness = true
-          if (item.address) hasAddress = true
-          if (item.telephone) hasPhone = true
+        }
+
+        if (item.address) {
+          hasAddress = true
+          const addressText = normalizeText(JSON.stringify(item.address))
+          if (hasCityMatch(addressText, cityVariants)) {
+            schemaCityDetected = true
+          }
+        }
+
+        if (item.telephone) {
+          hasPhone = true
+        }
+
+        if (item.geo) {
+          hasGeo = true
+        }
+
+        if (item.areaServed) {
+          hasAreaServed = true
+        }
+
+        if (item.openingHours || item.openingHoursSpecification) {
+          hasOpeningHours = true
+        }
+
+        if (item.sameAs) {
+          hasSameAs = true
+        }
+
+        const itemText = normalizeText(JSON.stringify(item))
+        if (hasCityMatch(itemText, cityVariants)) {
+          schemaCityDetected = true
         }
       })
-    } catch { }
+    } catch {
+      // ignore malformed schema blocks
+    }
   })
 
   const schemaResult = evaluateModule(
@@ -224,21 +363,34 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
     {
       has_localbusiness: hasLocalBusiness,
       has_address: hasAddress,
-      has_phone: hasPhone
+      has_phone: hasPhone,
+      has_geo: hasGeo,
+      has_areaServed: hasAreaServed,
+      has_openingHours: hasOpeningHours,
+      has_sameAs: hasSameAs
     },
     {
-      has_localbusiness: 10,
-      has_address: 5,
-      has_phone: 5
+      has_localbusiness: 9,
+      has_address: 4,
+      has_phone: 3,
+      has_geo: 3,
+      has_areaServed: 2,
+      has_openingHours: 2,
+      has_sameAs: 2
     },
     {
       has_localbusiness: 'LocalBusiness Schema fehlt',
       has_address: 'Adresse fehlt im Schema',
-      has_phone: 'Telefonnummer fehlt im Schema'
+      has_phone: 'Telefonnummer fehlt im Schema',
+      has_geo: 'Geo-Koordinaten fehlen im Schema',
+      has_areaServed: 'Servicegebiet fehlt im Schema',
+      has_openingHours: 'Öffnungszeiten fehlen im Schema',
+      has_sameAs: 'sameAs Profile fehlen im Schema'
     },
     {
       has_localbusiness: { severity: 'high', category: 'schema' },
-      has_phone: { severity: 'medium', category: 'schema' }
+      has_phone: { severity: 'medium', category: 'schema' },
+      has_geo: { severity: 'medium', category: 'schema' }
     }
   )
 
@@ -249,38 +401,139 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   // ================= NAP =================
 
   const germanPhoneRegex = /(?:\+49|0)\s*\(?\d{2,5}\)?(?:[\s\-\/]*\d{2,}){2,}/
-  const streetAddressRegex = /\b[a-z][a-z\s\-]{2,}(?:strasse|str\.?|weg|allee|platz|gasse|ring|ufer|chaussee|damm)\s+\d{1,4}[a-z]?(?:\s*[-\/]\s*\d{1,4}[a-z]?)?\b/
-  const zipCityRegex = /\b\d{5}\s+[a-z][a-z\s\-]{1,}\b/
+  const streetAddressRegex = /\b[a-zäöü][a-zäöüß\-]{2,}\s+\d{1,4}[a-z]?\b/gi
+  const zipCityRegex = /\b\d{5}\s+[a-zäöü][a-zäöüß\-]+(?:\s+[a-zäöü][a-zäöüß\-]+)?\b/gi
+
+  const localEntities = extractLocalEntities(normalizedBodyText)
+  const zipMatches = normalizedBodyText.match(zipCityRegex) || []
 
   const hasPhoneInHtml = germanPhoneRegex.test(normalizedBodyText)
   const hasCityInHtml = hasCityMatch(normalizedBodyText, cityVariants)
-  const hasAddressInHtml = streetAddressRegex.test(normalizedBodyText) || zipCityRegex.test(normalizedBodyText)
+  const hasStreetInHtml = (normalizedBodyText.match(streetAddressRegex) || []).length > 0
+  const hasZipInHtml = localEntities.postalCodes.length > 0
+  const hasAddressInHtml = hasStreetInHtml && zipMatches.length > 0
 
   const napResult = evaluateModule(
     'nap',
     {
       phone_present: hasPhoneInHtml,
       city_present: hasCityInHtml,
+      street_present: hasStreetInHtml,
+      zip_present: hasZipInHtml,
       address_present: hasAddressInHtml
     },
     {
-      phone_present: 8,
-      city_present: 8,
-      address_present: 4
+      phone_present: 5,
+      city_present: 5,
+      street_present: 4,
+      zip_present: 3,
+      address_present: 3
     },
     {
       phone_present: 'Telefonnummer nicht im sichtbaren Inhalt gefunden',
       city_present: 'Stadt nicht im Content gefunden',
-      address_present: 'Adresse nicht im Content gefunden'
+      street_present: 'Straße und Hausnummer nicht gefunden',
+      zip_present: 'Postleitzahl nicht gefunden',
+      address_present: 'Vollständige Adresse nicht im Content gefunden'
     },
     {
-      phone_present: { severity: 'medium', category: 'nap' }
+      phone_present: { severity: 'medium', category: 'nap' },
+      address_present: { severity: 'high', category: 'nap' }
     }
   )
 
   breakdown.nap = napResult
   score += napResult.score
   priorities = priorities.concat(napResult.priorities)
+
+  // ================= CONTENT SIGNALS =================
+
+  const cityMentionsPool = new Set([...cityVariants, ...localEntities.cities])
+  const cityMentionsCount = countCityMentions(normalizedBodyText, Array.from(cityMentionsPool))
+  const serviceAreaDetected = cityMentionsCount > 2
+
+  const contentResult = evaluateModule(
+    'content',
+    {
+      city_present: hasCityInHtml,
+      service_area_detected: serviceAreaDetected,
+      entities_detected: localEntities.postalCodes.length > 0 || localEntities.streets.length > 0
+    },
+    {
+      city_present: 4,
+      service_area_detected: 3,
+      entities_detected: 3
+    },
+    {
+      city_present: 'Stadt wird im Hauptcontent nicht erwähnt',
+      service_area_detected: 'Servicegebiet mit mehreren Städten wurde nicht erkannt',
+      entities_detected: 'Lokale Entitäten (PLZ/Straße) wurden nicht erkannt'
+    }
+  )
+
+  contentResult.city_mentions_count = cityMentionsCount
+  breakdown.content = contentResult
+  score += contentResult.score
+
+  // ================= CONSISTENCY =================
+
+  const titleCityDetected = hasCityMatch(normalizedTitle, cityVariants)
+  const h1CityDetected = hasCityMatch(normalizedH1Text, cityVariants)
+  const bodyCityDetected = hasCityInHtml
+  const locationConsistency = titleCityDetected && h1CityDetected && bodyCityDetected && schemaCityDetected
+
+  breakdown.consistency = {
+    location_consistency: locationConsistency,
+    title_city: titleCityDetected,
+    h1_city: h1CityDetected,
+    body_city: bodyCityDetected,
+    schema_city: schemaCityDetected
+  }
+
+  if (!schemaResult.checks.has_geo) {
+    priorities.push({
+      code: 'missing_schema_geo',
+      severity: 'medium',
+      category: 'schema',
+      message: 'Geo-Koordinaten im LocalBusiness-Schema fehlen'
+    })
+  }
+
+  if (!h1Result.checks.local_intent_present) {
+    priorities.push({
+      code: 'missing_local_intent',
+      severity: 'medium',
+      category: 'headings',
+      message: 'Lokale Suchintention ist in der H1 nicht klar erkennbar'
+    })
+  }
+
+  if (!napResult.checks.address_present) {
+    priorities.push({
+      code: 'missing_address',
+      severity: 'high',
+      category: 'nap',
+      message: 'Vollständige Adresse (Straße + PLZ/Ort) fehlt im sichtbaren Inhalt'
+    })
+  }
+
+  if (!contentResult.checks.city_present) {
+    priorities.push({
+      code: 'missing_city_in_content',
+      severity: 'high',
+      category: 'content',
+      message: 'Die Zielstadt wird im Seiteninhalt nicht ausreichend erwähnt'
+    })
+  }
+
+  if (!locationConsistency) {
+    priorities.push({
+      code: 'location_consistency_warning',
+      severity: 'medium',
+      category: 'consistency',
+      message: 'Lokale Signale sind inkonsistent zwischen Title, H1, Content und Schema'
+    })
+  }
 
   const result = {
     dimension: 'local_seo',
