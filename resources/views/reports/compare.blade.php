@@ -2,6 +2,8 @@
 
 @section('content')
 @php
+    use Carbon\Carbon;
+
     $reportList = collect($reports ?? [])->take(4)->values();
     $reportCount = $reportList->count();
 
@@ -33,6 +35,8 @@
             ? (int) round(($overallScore / $overallMax) * 100)
             : max(0, min(100, $scoreValue));
 
+        $startedAt = $report->started_at;
+
         return [
             'id' => $report->id,
             'report' => $report,
@@ -40,7 +44,9 @@
             'overall_score' => $overallScore,
             'overall_max' => $overallMax,
             'percent' => $percent,
-            'started_at' => $report->started_at,
+            'started_at' => $startedAt && strtotime((string) $startedAt) !== false
+                ? Carbon::parse($startedAt)
+                : null,
         ];
     })->values();
 @endphp
