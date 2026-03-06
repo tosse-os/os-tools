@@ -27,6 +27,8 @@ class LocalSeoController extends Controller
       'user_id' => auth()->id(),
       'type' => 'local_seo',
       'url' => $request->url,
+      'keyword' => $request->keyword,
+      'city' => $request->city,
       'status' => 'queued'
     ]);
 
