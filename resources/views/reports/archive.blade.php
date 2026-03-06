@@ -2,7 +2,7 @@
 
 @section('content')
 
-<div class="max-w-6xl mx-auto bg-white shadow-sm rounded p-8 space-y-8">
+<div class="max-w-6xl mx-auto bg-white shadow-sm rounded-lg border border-gray-100 p-8 space-y-8">
 
   <div class="flex justify-between items-center">
     <h1 class="text-2xl font-semibold">Report Archiv</h1>
@@ -12,7 +12,7 @@
   </div>
 
   @if($errors->has('reports'))
-  <div class="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+  <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
     {{ $errors->first('reports') }}
   </div>
   @endif
@@ -27,28 +27,39 @@
     <div>
       <button
         type="submit"
-        class="inline-flex items-center rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">
+        class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">
         Compare Reports
       </button>
     </div>
 
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-sm border">
+    <div class="overflow-x-auto rounded-lg border shadow">
+      <table class="min-w-full text-sm">
 
         <thead class="bg-gray-100 text-left">
           <tr>
             <th class="px-4 py-3 border-b">Vergleich</th>
-            <th class="px-4 py-3 border-b">Datum</th>
-            <th class="px-4 py-3 border-b">URL</th>
-            <th class="px-4 py-3 border-b">Typ</th>
-            <th class="px-4 py-3 border-b">Status</th>
+            <th class="px-4 py-3 border-b">Date</th>
+            <th class="px-4 py-3 border-b">Keyword</th>
+            <th class="px-4 py-3 border-b">City</th>
+            <th class="px-4 py-3 border-b">Domain</th>
             <th class="px-4 py-3 border-b">Score</th>
+            <th class="px-4 py-3 border-b">Status</th>
             <th class="px-4 py-3 border-b text-right">Aktion</th>
           </tr>
         </thead>
 
         <tbody>
           @foreach($reports as $report)
+          @php
+            $keyword = $report->keyword ?: '—';
+            $city = $report->city ?: '—';
+            $domain = parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—';
+            $startedAt = $report->started_at && strtotime((string) $report->started_at) !== false
+              ? \Carbon\Carbon::parse($report->started_at)
+              : null;
+            $scoreValue = is_numeric($report->score) ? (float) $report->score : null;
+            $scorePercent = $scoreValue !== null ? (int) max(0, min(100, round($scoreValue))) : 0;
+          @endphp
 
           <tr class="hover:bg-gray-50">
             <td class="px-4 py-3 border-b align-top">
@@ -60,39 +71,45 @@
                 @checked(collect(request('reports', old('reports', [])))->contains($report->id))>
             </td>
 
-            <td class="px-4 py-3 border-b">
-              {{ $report->created_at->format('d.m.Y H:i') }}
+            <td class="px-4 py-3 border-b whitespace-nowrap">
+              {{ $startedAt ? $startedAt->format('d.m.Y H:i') : '—' }}
             </td>
 
             <td class="px-4 py-3 border-b">
-              <div class="truncate max-w-xs">
-                {{ $report->url }}
+              {{ $keyword }}
+            </td>
+
+            <td class="px-4 py-3 border-b">
+              {{ $city }}
+            </td>
+
+            <td class="px-4 py-3 border-b">
+              <div class="truncate max-w-xs">{{ $domain }}</div>
+            </td>
+
+            <td class="px-4 py-3 border-b min-w-[170px]">
+              <div class="space-y-2">
+                <div class="font-semibold">
+                  {{ $scoreValue !== null ? number_format($scoreValue, 2) : '—' }}
+                </div>
+                <div class="text-xs text-gray-600">
+                  Score: {{ $scoreValue !== null ? number_format($scoreValue, 0) : '0' }} / 100
+                </div>
+                <div class="w-28 bg-gray-200 h-2 rounded overflow-hidden">
+                  <div class="bg-green-500 h-2 rounded" style="width: {{ $scorePercent }}%"></div>
+                </div>
               </div>
             </td>
 
             <td class="px-4 py-3 border-b">
-              {{ ucfirst($report->type) }}
-            </td>
-
-            <td class="px-4 py-3 border-b">
               @if($report->status === 'done')
-              <span class="text-green-600 font-semibold">Fertig</span>
+              <span class="text-green-600 font-semibold">Done</span>
               @elseif($report->status === 'running')
-              <span class="text-yellow-600 font-semibold">Läuft</span>
+              <span class="text-yellow-600 font-semibold">Running</span>
               @elseif($report->status === 'queued')
-              <span class="text-gray-600 font-semibold">In Warteschlange</span>
+              <span class="text-gray-600 font-semibold">Queued</span>
               @else
-              <span class="text-red-600 font-semibold">Fehler</span>
-              @endif
-            </td>
-
-            <td class="px-4 py-3 border-b">
-              @if($report->score !== null)
-              <span class="font-semibold">
-                {{ $report->score }}
-              </span>
-              @else
-              –
+              <span class="text-red-600 font-semibold">Error</span>
               @endif
             </td>
 
