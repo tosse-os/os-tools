@@ -145,6 +145,107 @@ function extractLocalEntities(normalizedText) {
   }
 }
 
+function countTermMentions(text, term) {
+  if (!term) return 0
+  const escapedTerm = escapeRegExp(term)
+  const regex = new RegExp(`(^|[^a-z0-9])${escapedTerm}([^a-z0-9]|$)`, 'gi')
+  let count = 0
+
+  while (regex.exec(text) !== null) {
+    count += 1
+  }
+
+  return count
+}
+
+function countCityMentionsTotal(text, cities) {
+  return cities.reduce((total, city) => total + countTermMentions(text, city), 0)
+}
+
+function extractHostname(urlString) {
+  try {
+    return new URL(urlString).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+function hasGoogleBusinessLink(urls) {
+  const patterns = [
+    /google\.com\/maps/i,
+    /goo\.gl\/maps/i,
+    /g\.page/i,
+    /google\.com\/search\?q=/i
+  ]
+
+  return urls.some(url => patterns.some(pattern => pattern.test(url)))
+}
+
+function detectCitationDomains(urls) {
+  const citationDomains = ['yelp.', '11880.', 'gelbeseiten.', 'kennstdueinen.', 'golocal.', 'meinestadt.']
+
+  const found = new Set()
+  urls.forEach(url => {
+    const host = extractHostname(url)
+    citationDomains.forEach(domain => {
+      if (host.includes(domain)) {
+        found.add(domain.replace(/\.$/, ''))
+      }
+    })
+  })
+
+  return Array.from(found)
+}
+
+function detectTrustSignals(text) {
+  const trustPatterns = [
+    /meisterbetrieb/,
+    /seit\s+19\d{2}/,
+    /ueber\s+\d{1,2}\s+jahre\s+erfahrung/,
+    /zertifiziert/,
+    /mitglied\s+der\s+handwerkskammer/
+  ]
+
+  return trustPatterns.some(pattern => pattern.test(text))
+}
+
+function detectServiceAreaSignal(text, cityVariants) {
+  const genericPatterns = [/im\s+raum\s+/, /in\s+und\s+um\s+/, /und\s+umgebung/, /im\s+grossraum\s+/]
+  const cityScopedPatterns = cityVariants.map(city => {
+    const escapedCity = escapeRegExp(city)
+    return [
+      new RegExp(`im\\s+raum\\s+${escapedCity}`, 'i'),
+      new RegExp(`in\\s+und\\s+um\\s+${escapedCity}`, 'i'),
+      new RegExp(`${escapedCity}\\s+und\\s+umgebung`, 'i'),
+      new RegExp(`im\\s+grossraum\\s+${escapedCity}`, 'i')
+    ]
+  }).flat()
+
+  return cityScopedPatterns.some(pattern => pattern.test(text)) || genericPatterns.some(pattern => pattern.test(text))
+}
+
+function detectReviewSignal(normalizedBodyText, rawBodyText) {
+  const normalizedPatterns = [/google\s+bewertung/, /kundenmeinungen/, /bewertungen/]
+  const hasNormalizedPattern = normalizedPatterns.some(pattern => pattern.test(normalizedBodyText))
+  const hasStars = /★{3,}|⭐{3,}/.test(rawBodyText)
+  return hasNormalizedPattern || hasStars
+}
+
+function findContentZipCity(normalizedBodyText) {
+  const zipCityRegex = /\b(\d{5})\s+([a-z][a-z\-]+(?:\s+[a-z][a-z\-]+)?)\b/gi
+  const found = []
+  let match
+
+  while ((match = zipCityRegex.exec(normalizedBodyText)) !== null) {
+    found.push({
+      zip: match[1],
+      city: normalizeText(match[2])
+    })
+  }
+
+  return found
+}
+
 function countCityMentions(normalizedText, cities) {
   const detected = new Set()
 
@@ -215,11 +316,25 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
     scripts => scripts.map(s => s.innerText)
   )
 
+  const pageLinks = await page.$$eval('a[href]', anchors =>
+    anchors
+      .map(anchor => anchor.getAttribute('href') || '')
+      .filter(Boolean)
+  )
+
+  const iframeSources = await page.$$eval('iframe[src]', iframes =>
+    iframes
+      .map(iframe => iframe.getAttribute('src') || '')
+      .filter(Boolean)
+  )
+
   const normalizedTitle = normalizeText(title)
   const normalizedH1Text = normalizeText(h1.join(' '))
   const normalizedBodyText = normalizeText(bodyText)
   const normalizedKeyword = normalizeText(options.keyword)
   const cityVariants = buildCityVariants(options.city)
+  const normalizedLinks = pageLinks.map(link => normalizeText(link))
+  const normalizedIframeSources = iframeSources.map(src => normalizeText(src))
 
   const titlePatternSets = buildTitleLocalPatterns(normalizedKeyword, cityVariants)
   const h1LocalIntentPatterns = buildLocalIntentPatterns(normalizedKeyword, cityVariants)
@@ -307,6 +422,9 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   let hasOpeningHours = false
   let hasSameAs = false
   let schemaCityDetected = false
+  let schemaPostalCode = ''
+  let schemaCity = ''
+  let hasGeoCoordinates = false
 
   jsonLd.forEach(block => {
     try {
@@ -326,6 +444,17 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
           if (hasCityMatch(addressText, cityVariants)) {
             schemaCityDetected = true
           }
+
+          if (typeof item.address === 'object') {
+            const schemaAddressLocality = normalizeText(item.address.addressLocality || item.address.addressRegion || '')
+            const schemaAddressPostal = normalizeText(item.address.postalCode || '')
+            if (schemaAddressLocality) {
+              schemaCity = schemaAddressLocality
+            }
+            if (schemaAddressPostal) {
+              schemaPostalCode = schemaAddressPostal
+            }
+          }
         }
 
         if (item.telephone) {
@@ -334,6 +463,11 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
         if (item.geo) {
           hasGeo = true
+          const latitude = item.geo.latitude || item.geo.lat
+          const longitude = item.geo.longitude || item.geo.lng
+          if (latitude !== undefined && longitude !== undefined) {
+            hasGeoCoordinates = true
+          }
         }
 
         if (item.areaServed) {
@@ -405,6 +539,7 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   const zipCityRegex = /\b\d{5}\s+[a-zäöü][a-zäöüß\-]+(?:\s+[a-zäöü][a-zäöüß\-]+)?\b/gi
 
   const localEntities = extractLocalEntities(normalizedBodyText)
+  const contentZipCities = findContentZipCity(normalizedBodyText)
   const zipMatches = normalizedBodyText.match(zipCityRegex) || []
 
   const hasPhoneInHtml = germanPhoneRegex.test(normalizedBodyText)
@@ -412,6 +547,17 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   const hasStreetInHtml = (normalizedBodyText.match(streetAddressRegex) || []).length > 0
   const hasZipInHtml = localEntities.postalCodes.length > 0
   const hasAddressInHtml = hasStreetInHtml && zipMatches.length > 0
+
+  const hasGoogleBusinessProfileLink = hasGoogleBusinessLink(normalizedLinks)
+  const citationLinksFound = detectCitationDomains(normalizedLinks)
+  const trustSignalsDetected = detectTrustSignals(normalizedBodyText)
+  const serviceAreaSignal = detectServiceAreaSignal(normalizedBodyText, cityVariants)
+  const localIntentPatterns = buildLocalIntentPatterns(normalizedKeyword, cityVariants)
+  const localKeywordCoverage = hasPatternMatch(normalizedBodyText, localIntentPatterns)
+  const geoCoordinatesPresent = hasGeoCoordinates
+  const hasGoogleMapEmbed = normalizedIframeSources.some(src => src.includes('google.com/maps/embed'))
+  const contactPageDetected = normalizedLinks.some(link => /\/kontakt|\/contact|\/anfahrt|\/impressum/i.test(link))
+  const reviewSignalDetected = detectReviewSignal(normalizedBodyText, bodyText)
 
   const napResult = evaluateModule(
     'nap',
@@ -449,29 +595,82 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   // ================= CONTENT SIGNALS =================
 
   const cityMentionsPool = new Set([...cityVariants, ...localEntities.cities])
-  const cityMentionsCount = countCityMentions(normalizedBodyText, Array.from(cityMentionsPool))
-  const serviceAreaDetected = cityMentionsCount > 2
+  const cityMentionsCount = countCityMentionsTotal(normalizedBodyText, Array.from(cityMentionsPool))
+  const serviceAreaDetected = cityMentionsCount > 2 || serviceAreaSignal
+  const wordCount = normalizedBodyText.split(/\s+/).filter(Boolean).length || 1
+  const entityDensityScore = Number(Math.min(10, (cityMentionsCount / wordCount) * 1000).toFixed(2))
+
+  const contentZipCityMatch = contentZipCities.find(entry => hasCityMatch(entry.city, cityVariants))
+  const addressConsistency = Boolean(
+    schemaCity
+    && contentZipCityMatch
+    && hasCityMatch(schemaCity, cityVariants)
+    && hasCityMatch(contentZipCityMatch.city, cityVariants)
+    && (!schemaPostalCode || schemaPostalCode === contentZipCityMatch.zip)
+  )
 
   const contentResult = evaluateModule(
     'content',
     {
       city_present: hasCityInHtml,
       service_area_detected: serviceAreaDetected,
-      entities_detected: localEntities.postalCodes.length > 0 || localEntities.streets.length > 0
+      entities_detected: localEntities.postalCodes.length > 0 || localEntities.streets.length > 0,
+      has_google_business_link: hasGoogleBusinessProfileLink,
+      citation_links_found: citationLinksFound.length > 0,
+      trust_signals_detected: trustSignalsDetected,
+      service_area_signal: serviceAreaSignal,
+      local_keyword_coverage: localKeywordCoverage,
+      address_consistency: addressConsistency,
+      geo_coordinates_present: geoCoordinatesPresent,
+      has_google_map_embed: hasGoogleMapEmbed,
+      contact_page_detected: contactPageDetected,
+      review_signal_detected: reviewSignalDetected
     },
     {
-      city_present: 4,
-      service_area_detected: 3,
-      entities_detected: 3
+      city_present: 1.5,
+      service_area_detected: 0.5,
+      entities_detected: 0.5,
+      has_google_business_link: 1,
+      citation_links_found: 0.75,
+      trust_signals_detected: 0.75,
+      service_area_signal: 0.75,
+      local_keyword_coverage: 1,
+      address_consistency: 1,
+      geo_coordinates_present: 0.75,
+      has_google_map_embed: 0.5,
+      contact_page_detected: 0.5,
+      review_signal_detected: 0.5
     },
     {
       city_present: 'Stadt wird im Hauptcontent nicht erwähnt',
       service_area_detected: 'Servicegebiet mit mehreren Städten wurde nicht erkannt',
-      entities_detected: 'Lokale Entitäten (PLZ/Straße) wurden nicht erkannt'
+      entities_detected: 'Lokale Entitäten (PLZ/Straße) wurden nicht erkannt',
+      has_google_business_link: 'Google Business Profil-Link fehlt',
+      citation_links_found: 'Lokale Citation-Links wurden nicht gefunden',
+      trust_signals_detected: 'Trust-Signale (E-E-A-T) wurden nicht erkannt',
+      service_area_signal: 'Servicegebiet-Formulierungen fehlen',
+      local_keyword_coverage: 'Lokale Keyword-Kombinationen (Service + Stadt) fehlen',
+      address_consistency: 'Adressdaten zwischen Schema und Inhalt sind inkonsistent',
+      geo_coordinates_present: 'Geo-Koordinaten im Schema fehlen',
+      has_google_map_embed: 'Google Maps Embed wurde nicht gefunden',
+      contact_page_detected: 'Kontakt-/Anfahrt-/Impressum-Seite wurde nicht erkannt',
+      review_signal_detected: 'Bewertungs-Signale wurden nicht erkannt'
+    },
+    {
+      has_google_business_link: { severity: 'high', category: 'local_signals' },
+      address_consistency: { severity: 'high', category: 'consistency' },
+      geo_coordinates_present: { severity: 'medium', category: 'schema' },
+      has_google_map_embed: { severity: 'low', category: 'local_signals' },
+      contact_page_detected: { severity: 'medium', category: 'local_signals' }
     }
   )
 
   contentResult.city_mentions_count = cityMentionsCount
+  contentResult.city_mentions = cityMentionsCount
+  contentResult.entity_density_score = entityDensityScore
+  contentResult.citation_count = citationLinksFound.length
+  contentResult.citation_links_found = citationLinksFound
+  contentResult.trust_signals_detected = trustSignalsDetected
   breakdown.content = contentResult
   score += contentResult.score
 
@@ -480,23 +679,16 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
   const titleCityDetected = hasCityMatch(normalizedTitle, cityVariants)
   const h1CityDetected = hasCityMatch(normalizedH1Text, cityVariants)
   const bodyCityDetected = hasCityInHtml
-  const locationConsistency = titleCityDetected && h1CityDetected && bodyCityDetected && schemaCityDetected
+  const addressCityDetected = Boolean(contentZipCityMatch)
+  const locationConsistency = titleCityDetected && h1CityDetected && bodyCityDetected && schemaCityDetected && addressCityDetected
 
   breakdown.consistency = {
     location_consistency: locationConsistency,
     title_city: titleCityDetected,
     h1_city: h1CityDetected,
     body_city: bodyCityDetected,
-    schema_city: schemaCityDetected
-  }
-
-  if (!schemaResult.checks.has_geo) {
-    priorities.push({
-      code: 'missing_schema_geo',
-      severity: 'medium',
-      category: 'schema',
-      message: 'Geo-Koordinaten im LocalBusiness-Schema fehlen'
-    })
+    schema_city: schemaCityDetected,
+    address_city: addressCityDetected
   }
 
   if (!h1Result.checks.local_intent_present) {
@@ -517,12 +709,48 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
     })
   }
 
+  if (!contentResult.checks.has_google_business_link) {
+    priorities.push({
+      code: 'missing_google_business_link',
+      severity: 'high',
+      category: 'local_signals',
+      message: 'Es wurde kein Google Business Profile-Link erkannt'
+    })
+  }
+
   if (!contentResult.checks.city_present) {
     priorities.push({
-      code: 'missing_city_in_content',
+      code: 'missing_city_signal',
       severity: 'high',
       category: 'content',
       message: 'Die Zielstadt wird im Seiteninhalt nicht ausreichend erwähnt'
+    })
+  }
+
+  if (!contentResult.checks.geo_coordinates_present) {
+    priorities.push({
+      code: 'missing_geo_coordinates',
+      severity: 'medium',
+      category: 'schema',
+      message: 'Geo-Koordinaten wurden im Schema nicht erkannt'
+    })
+  }
+
+  if (!contentResult.checks.has_google_map_embed) {
+    priorities.push({
+      code: 'missing_map_embed',
+      severity: 'low',
+      category: 'local_signals',
+      message: 'Ein eingebetteter Google-Maps-Standort fehlt'
+    })
+  }
+
+  if (!contentResult.checks.contact_page_detected) {
+    priorities.push({
+      code: 'missing_contact_page',
+      severity: 'medium',
+      category: 'local_signals',
+      message: 'Kontakt-, Anfahrt- oder Impressum-Link wurde nicht gefunden'
     })
   }
 
