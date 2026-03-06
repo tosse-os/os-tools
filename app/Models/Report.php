@@ -17,12 +17,19 @@ class Report extends Model
         'user_id',
         'type',
         'url',
+        'keyword',
+        'city',
         'status',
         'total_urls',
         'processed_urls',
         'score',
         'started_at',
         'finished_at'
+    ];
+
+    protected $casts = [
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
     ];
 
     public function results()
