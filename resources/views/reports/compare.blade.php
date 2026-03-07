@@ -75,69 +75,68 @@
     @endforeach
   </div>
 
-  @if($mode === 'delta')
-    <div class="rounded-lg shadow border border-gray-200 p-6 overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left">
-          <tr>
-            <th class="px-4 py-3 border-b">Module</th>
-            <th class="px-4 py-3 border-b">Difference</th>
-            @foreach($reportSummaries as $summary)
-              <th class="px-4 py-3 border-b whitespace-nowrap">
-                {{ $summary['started_at'] ? $summary['started_at']->format('d M') : '—' }}
-              </th>
-            @endforeach
-          </tr>
-        </thead>
-        <tbody>
-          @foreach($comparisonModules as $module)
-            <tr>
-              <td class="px-4 py-3 border-b font-semibold">{{ ucfirst($module) }}</td>
-              <td class="px-4 py-3 border-b {{ data_get($scoreDifferences, $module . '.difference_class', 'text-gray-600') }}">
-                {{ data_get($scoreDifferences, $module . '.difference_text', '–') }}
-              </td>
-              @foreach($reportSummaries as $summary)
-                <td class="px-4 py-3 border-b">
-                  {{ data_get($scoreDifferences, $module . '.scores.' . $summary['id'], '—') }}
-                </td>
-              @endforeach
-            </tr>
-          @endforeach
-        </tbody>
-      </table>
+  @if($changedModules->count() > 0)
+  <div class="rounded-lg border border-blue-200 bg-blue-50 p-5">
+    <h2 class="text-lg font-semibold text-blue-900 mb-2">Modules with changes</h2>
+    <div class="flex flex-wrap gap-2 text-sm">
+      @foreach($changedModules as $module)
+      <div class="rounded border border-blue-200 bg-white px-3 py-1 {{ $module['delta_class'] }}">
+        {{ $module['module_label'] }} {{ $module['delta_text'] }}
+      </div>
+      @endforeach
     </div>
-  @else
-    <div class="rounded-lg shadow border border-gray-200 p-6 overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left">
-          <tr>
-            <th class="px-4 py-3 border-b">Module</th>
-            @foreach($reportSummaries as $summary)
-              <th class="px-4 py-3 border-b whitespace-nowrap">
-                <div class="font-medium text-gray-900">{{ $summary['started_at'] ? $summary['started_at']->format('d M') : '—' }}</div>
-                <div class="text-xs text-gray-500">{{ number_format($summary['score'], 0) }}/100</div>
-              </th>
-            @endforeach
-          </tr>
-        </thead>
-        <tbody>
-          @foreach($comparisonModules as $module)
-            <tr>
-              <td class="px-4 py-3 border-b font-semibold">{{ ucfirst($module) }}</td>
-              @foreach($reportSummaries as $summary)
-                @php
-                  $moduleData = $comparisonData[$module][$summary['id']] ?? [];
-                  $score = (int) ($moduleData['score'] ?? 0);
-                  $max = (int) ($moduleData['max_score'] ?? 0);
-                @endphp
-                <td class="px-4 py-3 border-b">{{ $score }}{{ $max > 0 ? ' / ' . $max : '' }}</td>
-              @endforeach
-            </tr>
-          @endforeach
-        </tbody>
-      </table>
-    </div>
+  </div>
   @endif
+
+  @if($largestChange)
+  <div class="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm">
+    <div class="font-semibold text-purple-900">Größte Veränderung</div>
+    <div class="text-purple-800">{{ $largestChange['module_label'] }} {{ $largestChange['delta_text'] }}</div>
+  </div>
+  @endif
+
+  @if($baseReport && $comparisonReport)
+  <div class="rounded-lg border border-gray-200 p-5 space-y-2">
+    <h2 class="text-lg font-semibold">Visual Module Comparison</h2>
+    @foreach($comparisonRows as $row)
+    <div class="text-sm border-b border-gray-100 pb-2">
+      <div class="font-medium text-gray-900">{{ $row['module_label'] }}</div>
+      <div class="text-xs text-gray-600">
+        {{ optional($baseReport->started_at)->format('d M') ?: 'A' }} {{ $row['base_bar'] ?: '—' }}
+      </div>
+      <div class="text-xs text-gray-600">
+        {{ optional($comparisonReport->started_at)->format('d M') ?: 'B' }} {{ $row['compare_bar'] ?: '—' }}
+      </div>
+    </div>
+    @endforeach
+  </div>
+  @endif
+
+  <div class="rounded-lg shadow border border-gray-200 p-6 overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-100 text-left">
+        <tr>
+          <th class="px-4 py-3 border-b">Module</th>
+          <th class="px-4 py-3 border-b">Version A</th>
+          <th class="px-4 py-3 border-b">Version B</th>
+          <th class="px-4 py-3 border-b">Delta</th>
+        </tr>
+      </thead>
+      <tbody>
+        @foreach($comparisonRows as $row)
+          @php
+            $isLargest = $largestChange && $largestChange['module'] === $row['module'];
+          @endphp
+          <tr class="{{ $isLargest ? 'bg-purple-50' : '' }}">
+            <td class="px-4 py-3 border-b font-semibold">{{ $row['module_label'] }}</td>
+            <td class="px-4 py-3 border-b">{{ is_numeric($row['base_score']) ? number_format($row['base_score'], 0) : '—' }}</td>
+            <td class="px-4 py-3 border-b">{{ is_numeric($row['compare_score']) ? number_format($row['compare_score'], 0) : '—' }}</td>
+            <td class="px-4 py-3 border-b font-semibold {{ $row['delta_class'] }}">{{ $row['delta_text'] }}</td>
+          </tr>
+        @endforeach
+      </tbody>
+    </table>
+  </div>
 </div>
 
 @endsection

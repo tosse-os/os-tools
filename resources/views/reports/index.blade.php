@@ -78,6 +78,20 @@
                 : null;
               $scoreValue = is_numeric($report->score) ? (float) $report->score : null;
               $scorePercent = $scoreValue !== null ? (int) max(0, min(100, round($scoreValue))) : 0;
+              $normalizedStatus = match ($report->status) {
+                'queued' => 'queued',
+                'processing', 'running' => 'processing',
+                'done', 'completed' => 'done',
+                'failed' => 'failed',
+                default => 'queued',
+              };
+              $statusMeta = [
+                'queued' => ['label' => 'In Warteschlange', 'icon' => '⏳', 'class' => 'text-yellow-700 bg-yellow-50 border-yellow-200'],
+                'processing' => ['label' => 'Analyse läuft', 'icon' => '⚙', 'class' => 'text-blue-700 bg-blue-50 border-blue-200'],
+                'done' => ['label' => 'Fertig', 'icon' => '✓', 'class' => 'text-green-700 bg-green-50 border-green-200'],
+                'failed' => ['label' => 'Fehler', 'icon' => '⚠', 'class' => 'text-red-700 bg-red-50 border-red-200'],
+              ];
+              $status = $statusMeta[$normalizedStatus];
             @endphp
             <div class="block border rounded-lg shadow-sm p-4 bg-white">
               <div class="flex justify-between items-start gap-4">
@@ -93,6 +107,12 @@
                     <div class="font-semibold text-gray-900">{{ $keyword }} • {{ $city }}</div>
                     <div class="text-gray-700">{{ $domain }}</div>
                     <div class="text-xs text-gray-500">{{ $startedAt ? $startedAt->format('d.m.Y H:i') : '—' }}</div>
+                    <div class="pt-1">
+                      <span class="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs {{ $status['class'] }}">
+                        <span>{{ $status['icon'] }}</span>
+                        <span>{{ $status['label'] }}</span>
+                      </span>
+                    </div>
                   </a>
                 </div>
 

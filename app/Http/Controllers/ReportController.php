@@ -60,21 +60,17 @@ class ReportController extends Controller
 
     $report->load('results');
 
-    $timelineQuery = Report::query()
-      ->where('url', $report->url)
-      ->orderBy('started_at');
+    $timelineQuery = Report::query()->orderBy('started_at');
 
-    if (!is_null($report->keyword) && !is_null($report->city)) {
-      $timelineQuery
-        ->where('keyword', $report->keyword)
-        ->where('city', $report->city);
-    }
+    $this->applyContextMatch($timelineQuery, 'url', $report->url);
+    $this->applyContextMatch($timelineQuery, 'keyword', $report->keyword);
+    $this->applyContextMatch($timelineQuery, 'city', $report->city);
 
     if (auth()->check()) {
       $timelineQuery->where('user_id', auth()->id());
     }
 
-    $timelineReports = $timelineQuery->get(['score', 'started_at']);
+    $timelineReports = $timelineQuery->get(['id', 'score', 'started_at']);
 
     $timeline = [
       'labels' => $timelineReports
@@ -89,9 +85,150 @@ class ReportController extends Controller
         ->all(),
     ];
 
+    $timelineCount = $timelineReports->count();
+    $latestContextReport = $timelineCount > 0
+      ? $timelineReports->last()
+      : null;
+    $previousContextReport = $timelineCount > 1
+      ? $timelineReports->slice(-2, 1)->first()
+      : null;
+
+    $regression = null;
+    $moduleRegressions = [];
+
+    if ($latestContextReport && $previousContextReport) {
+      $latestScore = is_numeric($latestContextReport->score) ? (float) $latestContextReport->score : null;
+      $previousScore = is_numeric($previousContextReport->score) ? (float) $previousContextReport->score : null;
+
+      if ($latestScore !== null && $previousScore !== null) {
+        $delta = $latestScore - $previousScore;
+        if ($delta < -10) {
+          $regression = [
+            'delta' => $delta,
+            'drop' => abs($delta),
+          ];
+        }
+      }
+
+      $latestReportModel = Report::with('results')->find($latestContextReport->id);
+      $previousReportModel = Report::with('results')->find($previousContextReport->id);
+      $latestBreakdown = $latestReportModel ? $this->extractBreakdown($latestReportModel) : [];
+      $previousBreakdown = $previousReportModel ? $this->extractBreakdown($previousReportModel) : [];
+
+      $trackedModules = [
+        'h1' => 'H1 Regression',
+        'title' => 'Title Regression',
+        'content' => 'Content Regression',
+        'schema' => 'Schema Regression',
+        'nap' => 'Nap Regression',
+        'consistency' => 'Consistency Regression',
+      ];
+
+      foreach ($trackedModules as $moduleKey => $label) {
+        $latestModuleScore = data_get($latestBreakdown, $moduleKey . '.score');
+        $previousModuleScore = data_get($previousBreakdown, $moduleKey . '.score');
+
+        if (!is_numeric($latestModuleScore) || !is_numeric($previousModuleScore)) {
+          continue;
+        }
+
+        $moduleDelta = (float) $latestModuleScore - (float) $previousModuleScore;
+        if ($moduleDelta < -3) {
+          $moduleRegressions[] = [
+            'label' => $label,
+            'delta' => $moduleDelta,
+            'drop' => abs($moduleDelta),
+          ];
+        }
+      }
+    }
+
+    $insightRules = [
+      [
+        'module' => 'content',
+        'label' => 'Content',
+        'condition' => fn($score) => $score < 5,
+        'title' => 'Content zu schwach',
+        'recommendation' => 'Empfehlung: Textumfang erhöhen und Keyword häufiger integrieren',
+      ],
+      [
+        'module' => 'title',
+        'label' => 'Title',
+        'condition' => fn($score) => $score < 15,
+        'title' => 'Title Optimierung möglich',
+        'recommendation' => 'Empfehlung: Keyword näher an den Anfang setzen',
+      ],
+      [
+        'module' => 'h1',
+        'label' => 'H1',
+        'condition' => fn($score) => $score < 10,
+        'title' => 'H1 enthält Keyword nicht optimal',
+        'recommendation' => null,
+      ],
+      [
+        'module' => 'schema',
+        'label' => 'Schema',
+        'condition' => fn($score) => $score === 0.0,
+        'title' => 'LocalBusiness Schema fehlt',
+        'recommendation' => null,
+      ],
+      [
+        'module' => 'nap',
+        'label' => 'NAP',
+        'condition' => fn($score) => $score < 10,
+        'title' => 'NAP Inkonsistenz erkannt',
+        'recommendation' => null,
+      ],
+    ];
+
+    $breakdown = $this->extractBreakdown($report);
+    $insights = [];
+
+    foreach ($insightRules as $rule) {
+      $score = data_get($breakdown, $rule['module'] . '.score');
+      $maxScore = data_get($breakdown, $rule['module'] . '.max');
+
+      if (!is_numeric($score)) {
+        continue;
+      }
+
+      $scoreValue = (float) $score;
+      if (($rule['condition'])($scoreValue)) {
+        $insights[] = [
+          'type' => 'warning',
+          'module' => $rule['label'],
+          'title' => $rule['title'],
+          'recommendation' => $rule['recommendation'],
+          'score' => $scoreValue,
+          'max_score' => is_numeric($maxScore) ? (float) $maxScore : null,
+        ];
+      }
+    }
+
+    $schemaScore = data_get($breakdown, 'schema.score');
+    if (is_numeric($schemaScore) && (float) $schemaScore > 0) {
+      $schemaMaxScore = data_get($breakdown, 'schema.max');
+      $insights[] = [
+        'type' => 'success',
+        'module' => 'Schema',
+        'title' => 'Schema korrekt',
+        'recommendation' => null,
+        'score' => (float) $schemaScore,
+        'max_score' => is_numeric($schemaMaxScore) ? (float) $schemaMaxScore : null,
+      ];
+    }
+
+    $insights = collect($insights)
+      ->sortBy(fn($item) => $item['score'])
+      ->values()
+      ->all();
+
     return view('reports.show', [
       'report' => $report,
       'timeline' => $timeline,
+      'regression' => $regression,
+      'moduleRegressions' => $moduleRegressions,
+      'insights' => $insights,
     ]);
   }
 
@@ -210,6 +347,47 @@ class ReportController extends Controller
       return $this->buildContextKey($report);
     })->unique()->values();
 
+    $baseReport = $reports->first();
+    $comparisonReport = $reports->last();
+
+    $comparisonRows = collect($comparisonModules)
+      ->map(function ($moduleName) use ($comparisonData, $baseReport, $comparisonReport) {
+        $baseScore = data_get($comparisonData, $moduleName . '.' . optional($baseReport)->id . '.score');
+        $compareScore = data_get($comparisonData, $moduleName . '.' . optional($comparisonReport)->id . '.score');
+        $baseMax = data_get($comparisonData, $moduleName . '.' . optional($baseReport)->id . '.max_score');
+        $compareMax = data_get($comparisonData, $moduleName . '.' . optional($comparisonReport)->id . '.max_score');
+
+        $delta = is_numeric($baseScore) && is_numeric($compareScore)
+          ? (float) $compareScore - (float) $baseScore
+          : null;
+
+        return [
+          'module' => $moduleName,
+          'module_label' => ucfirst($moduleName),
+          'base_score' => is_numeric($baseScore) ? (float) $baseScore : null,
+          'compare_score' => is_numeric($compareScore) ? (float) $compareScore : null,
+          'base_max' => is_numeric($baseMax) ? (float) $baseMax : null,
+          'compare_max' => is_numeric($compareMax) ? (float) $compareMax : null,
+          'delta' => $delta,
+          'delta_text' => $delta === null ? '–' : (($delta > 0 ? '+' : '') . $delta),
+          'delta_class' => $delta > 0
+            ? 'text-green-600'
+            : ($delta < 0 ? 'text-red-600' : 'text-gray-600'),
+          'base_bar' => is_numeric($baseScore) ? str_repeat('█', max(1, (int) round((float) $baseScore))) : '',
+          'compare_bar' => is_numeric($compareScore) ? str_repeat('█', max(1, (int) round((float) $compareScore))) : '',
+        ];
+      })
+      ->values();
+
+    $largestChange = $comparisonRows
+      ->filter(fn($row) => $row['delta'] !== null)
+      ->sortByDesc(fn($row) => abs($row['delta']))
+      ->first();
+
+    $changedModules = $comparisonRows
+      ->filter(fn($row) => $row['delta'] !== null && $row['delta'] != 0)
+      ->values();
+
     return view('reports.compare', [
       'reports' => $reports,
       'comparisonModules' => $comparisonModules,
@@ -218,7 +396,42 @@ class ReportController extends Controller
       'mode' => $mode,
       'compareQuery' => ['reports' => $reports->pluck('id')->all()],
       'hasContextMismatch' => $contextKeys->count() > 1,
+      'baseReport' => $baseReport,
+      'comparisonReport' => $comparisonReport,
+      'comparisonRows' => $comparisonRows,
+      'largestChange' => $largestChange,
+      'changedModules' => $changedModules,
     ]);
+  }
+
+  private function applyContextMatch($query, string $column, $value): void
+  {
+    $normalized = trim((string) ($value ?? ''));
+
+    if ($normalized === '') {
+      $query->where(function ($innerQuery) use ($column) {
+        $innerQuery->whereNull($column)->orWhere($column, '');
+      });
+
+      return;
+    }
+
+    $query->where($column, $normalized);
+  }
+
+  private function extractBreakdown(Report $report): array
+  {
+    foreach ($report->results as $result) {
+      $payload = is_array($result->payload)
+        ? $result->payload
+        : json_decode((string) $result->payload, true);
+
+      if (is_array($payload) && is_array(data_get($payload, 'breakdown'))) {
+        return $payload['breakdown'];
+      }
+    }
+
+    return [];
   }
 
   private function applyArchiveFilters($query, Request $request): void
