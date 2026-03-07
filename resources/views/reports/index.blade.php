@@ -6,9 +6,20 @@
 
   <div class="flex justify-between items-center">
     <h1 class="text-2xl font-semibold">Letzte Reports</h1>
-    <a href="{{ route('reports.archive') }}" class="text-sm text-blue-600 hover:underline">
-      Gesamte Historie anzeigen
-    </a>
+    <div class="flex items-center gap-4">
+      <form method="GET" action="{{ route('localseo.form') }}" id="startAnalysisForm">
+        <button
+          type="submit"
+          id="startAnalysisButton"
+          class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition disabled:cursor-not-allowed disabled:opacity-70">
+          Analyse starten
+        </button>
+      </form>
+
+      <a href="{{ route('reports.archive') }}" class="text-sm text-blue-600 hover:underline">
+        Gesamte Historie anzeigen
+      </a>
+    </div>
   </div>
 
   @if($errors->has('reports'))
@@ -103,4 +114,18 @@
 
 </div>
 
+@endsection
+
+@section('scripts')
+<script>
+  const startAnalysisForm = document.getElementById('startAnalysisForm');
+  const startAnalysisButton = document.getElementById('startAnalysisButton');
+
+  if (startAnalysisForm && startAnalysisButton) {
+    startAnalysisForm.addEventListener('submit', () => {
+      startAnalysisButton.disabled = true;
+      startAnalysisButton.textContent = 'Analyse wird gestartet...';
+    });
+  }
+</script>
 @endsection
