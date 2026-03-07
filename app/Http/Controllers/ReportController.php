@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
-  public function index()
+  public function index(Request $request)
   {
     $query = Report::query();
 
@@ -15,15 +15,22 @@ class ReportController extends Controller
       $query->where('user_id', auth()->id());
     }
 
+    $this->applyArchiveFilters($query, $request);
+
     $reports = $query
       ->latest()
-      ->limit(6)
+      ->limit(60)
       ->get();
 
-    return view('reports.index', compact('reports'));
+    $reportContexts = $this->buildReportContexts($reports);
+
+    return view('reports.index', [
+      'reportContexts' => $reportContexts,
+      'filters' => $this->extractFilters($request),
+    ]);
   }
 
-  public function archive()
+  public function archive(Request $request)
   {
     $query = Report::query();
 
@@ -31,11 +38,18 @@ class ReportController extends Controller
       $query->where('user_id', auth()->id());
     }
 
+    $this->applyArchiveFilters($query, $request);
+
     $reports = $query
       ->latest()
-      ->paginate(25);
+      ->get();
 
-    return view('reports.archive', compact('reports'));
+    $reportContexts = $this->buildReportContexts($reports);
+
+    return view('reports.archive', [
+      'reportContexts' => $reportContexts,
+      'filters' => $this->extractFilters($request),
+    ]);
   }
 
   public function show(Report $report)
@@ -78,6 +92,10 @@ class ReportController extends Controller
       return redirect()->back()->withErrors([
         'reports' => 'Mindestens ein ausgewählter Report wurde nicht gefunden.',
       ])->withInput();
+    }
+
+    if (auth()->check() && $reports->contains(fn($report) => $report->user_id !== auth()->id())) {
+      abort(403);
     }
 
     $comparisonModules = [];
@@ -156,6 +174,10 @@ class ReportController extends Controller
       $mode = 'modules';
     }
 
+    $contextKeys = $reports->map(function ($report) {
+      return $this->buildContextKey($report);
+    })->unique()->values();
+
     return view('reports.compare', [
       'reports' => $reports,
       'comparisonModules' => $comparisonModules,
@@ -163,6 +185,96 @@ class ReportController extends Controller
       'scoreDifferences' => $scoreDifferences,
       'mode' => $mode,
       'compareQuery' => ['reports' => $reports->pluck('id')->all()],
+      'hasContextMismatch' => $contextKeys->count() > 1,
     ]);
+  }
+
+  private function applyArchiveFilters($query, Request $request): void
+  {
+    $keyword = trim((string) $request->query('keyword', ''));
+    if ($keyword !== '') {
+      $query->where('keyword', 'like', '%' . $keyword . '%');
+    }
+
+    $city = trim((string) $request->query('city', ''));
+    if ($city !== '') {
+      $query->where('city', 'like', '%' . $city . '%');
+    }
+
+    $domain = trim((string) $request->query('domain', ''));
+    if ($domain !== '') {
+      $query->where('url', 'like', '%' . $domain . '%');
+    }
+  }
+
+  private function extractFilters(Request $request): array
+  {
+    return [
+      'keyword' => trim((string) $request->query('keyword', '')),
+      'city' => trim((string) $request->query('city', '')),
+      'domain' => trim((string) $request->query('domain', '')),
+    ];
+  }
+
+  private function buildReportContexts($reports)
+  {
+    return $reports
+      ->groupBy(fn($report) => $this->buildContextKey($report))
+      ->map(function ($contextReports, $contextKey) {
+        $latestReport = $contextReports->sortByDesc('started_at')->first();
+
+        return [
+          'context_key' => $contextKey,
+          'keyword' => $this->valueOrDash(optional($latestReport)->keyword),
+          'city' => $this->valueOrDash(optional($latestReport)->city),
+          'domain' => $this->extractDomain(optional($latestReport)->url),
+          'url' => optional($latestReport)->url,
+          'reports_count' => $contextReports->count(),
+          'last_score' => is_numeric(optional($latestReport)->score) ? (float) $latestReport->score : null,
+          'latest_started_at' => optional($latestReport)->started_at,
+          'reports' => $contextReports->values(),
+        ];
+      })
+      ->sortByDesc(function ($group) {
+        $startedAt = $group['latest_started_at'];
+
+        if ($startedAt instanceof \DateTimeInterface) {
+          return $startedAt->getTimestamp();
+        }
+
+        if ($startedAt && strtotime((string) $startedAt) !== false) {
+          return strtotime((string) $startedAt);
+        }
+
+        return PHP_INT_MIN;
+      })
+      ->values();
+  }
+
+  private function buildContextKey(Report $report): string
+  {
+    $url = trim((string) ($report->url ?? ''));
+    $keyword = $this->valueOrDash($report->keyword);
+    $city = $this->valueOrDash($report->city);
+
+    return implode('|', [$url !== '' ? $url : '—', $keyword, $city]);
+  }
+
+  private function valueOrDash($value): string
+  {
+    $normalized = trim((string) ($value ?? ''));
+
+    return $normalized !== '' ? $normalized : '—';
+  }
+
+  private function extractDomain($url): string
+  {
+    $rawUrl = trim((string) ($url ?? ''));
+
+    if ($rawUrl === '') {
+      return '—';
+    }
+
+    return parse_url($rawUrl, PHP_URL_HOST) ?: $rawUrl;
   }
 }
