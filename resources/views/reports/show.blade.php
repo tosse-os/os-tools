@@ -30,6 +30,16 @@ $createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
     </div>
   </div>
 
+  <div>
+    <h2 class="text-xl font-semibold mb-4">SEO Score Verlauf</h2>
+
+    @if(count($timeline['data'] ?? []) < 2)
+    <div class="text-sm text-gray-600">Not enough data for timeline</div>
+    @else
+    <canvas id="seoTimeline"></canvas>
+    @endif
+  </div>
+
   @foreach(($modules['dimensions'] ?? []) as $dimensionKey => $dimension)
 
   <div>
@@ -198,4 +208,55 @@ $createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
 
 </div>
 
+@endsection
+
+@section('scripts')
+@if(count($timeline['data'] ?? []) >= 2)
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const timelineCtx = document.getElementById('seoTimeline');
+
+  if (timelineCtx) {
+    new Chart(timelineCtx, {
+      type: 'line',
+      data: {
+        labels: @json($timeline['labels'] ?? []),
+        datasets: [{
+          label: 'SEO Score',
+          data: @json($timeline['data'] ?? []),
+          borderColor: '#16a34a',
+          backgroundColor: 'transparent',
+          tension: 0.35,
+          fill: false,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            display: false,
+          },
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Scan Date',
+            },
+          },
+          y: {
+            title: {
+              display: true,
+              text: 'Score',
+            },
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+  }
+</script>
+@endif
 @endsection
