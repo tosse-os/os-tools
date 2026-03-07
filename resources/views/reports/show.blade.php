@@ -46,6 +46,9 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
         <div class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium {{ $currentStatus['class'] }}">
           <span>{{ $currentStatus['icon'] }}</span>
           <span>Status: {{ $currentStatus['label'] }}</span>
+          @if($showLoadingState)
+          <span class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+          @endif
         </div>
       </div>
 
@@ -64,14 +67,51 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
     </div>
   </div>
 
+  @if($regression || !empty($moduleRegressions))
+  <div class="space-y-3 rounded-lg border border-red-200 bg-red-50 p-5">
+    <h2 class="text-xl font-semibold text-red-900">Regressionen</h2>
+
+    @if($regression)
+    <div class="text-sm text-red-800">
+      ⚠ SEO Regression erkannt<br>
+      Score ist um {{ number_format($regression['drop'], 0) }} Punkte gefallen
+    </div>
+    @endif
+
+    @foreach($moduleRegressions as $moduleRegression)
+    <div class="text-sm text-red-800">⚠ {{ $moduleRegression['label'] }} ({{ number_format($moduleRegression['delta'], 1) }})</div>
+    @endforeach
+  </div>
+  @endif
+
   <div>
     <h2 class="text-xl font-semibold mb-4">SEO Score Verlauf</h2>
 
     @if(count($timeline['data'] ?? []) < 2)
-    <div class="text-sm text-gray-600">Not enough data for timeline</div>
+    <div class="text-sm text-gray-600">Noch nicht genug Daten für einen Verlauf.</div>
     @else
     <canvas id="seoTimeline"></canvas>
     @endif
+  </div>
+
+  <div>
+    <h2 class="text-xl font-semibold mb-4">Top SEO Issues</h2>
+
+    <div class="space-y-3">
+      @forelse($insights as $insight)
+      <div class="rounded-lg border p-4 {{ $insight['type'] === 'success' ? 'border-green-200 bg-green-50 text-green-800' : 'border-yellow-200 bg-yellow-50 text-yellow-900' }}">
+        <div class="font-semibold">
+          {!! $insight['type'] === 'success' ? '✓' : '⚠' !!} {{ $insight['title'] }}
+        </div>
+        <div class="text-sm mt-1">Score {{ number_format($insight['score'], 0) }}{{ is_numeric($insight['max_score']) ? ' / ' . number_format($insight['max_score'], 0) : '' }}</div>
+        @if($insight['recommendation'])
+        <div class="text-sm mt-1">{{ $insight['recommendation'] }}</div>
+        @endif
+      </div>
+      @empty
+      <div class="text-sm text-gray-600">Keine kritischen SEO Issues gefunden.</div>
+      @endforelse
+    </div>
   </div>
 
   @foreach(($modules['dimensions'] ?? []) as $dimensionKey => $dimension)
@@ -105,7 +145,7 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
       : ($percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500');
       @endphp
 
-      <div x-data="{ open: false }" class="border rounded overflow-hidden">
+      <div x-data="{ open: false, explainOpen: false }" class="border rounded overflow-hidden">
 
         <button
           type="button"
@@ -146,6 +186,17 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
           x-show="open"
           x-transition
           class="px-5 pb-6 space-y-6 text-sm border-t bg-gray-50">
+
+          <div>
+            <button type="button" class="font-medium mb-2 flex items-center gap-2" @click="explainOpen = !explainOpen">
+              Erklärung
+              <span :class="{ 'rotate-180': explainOpen }" class="inline-block transition-transform">▼</span>
+            </button>
+            <div x-show="explainOpen" x-transition class="rounded border border-blue-100 bg-blue-50 p-3 text-gray-700">
+              {{ $config['description'] ?? '' }}<br>
+              <span class="font-medium">Empfohlen:</span> {{ $config['how_to_fix'] ?? '' }}
+            </div>
+          </div>
 
           <div>
             <div class="font-medium mb-2">So wird bewertet:</div>
@@ -205,40 +256,6 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
   </div>
 
   @endforeach
-
-  <div>
-    <h2 class="text-xl font-semibold mb-4">Handlungsempfehlungen</h2>
-
-    <div class="space-y-4">
-
-      @foreach(($data['priorities'] ?? []) as $priority)
-
-      @php
-      $severityColors = [
-      'high' => 'bg-red-100 border-red-500',
-      'medium' => 'bg-yellow-100 border-yellow-500',
-      'low' => 'bg-green-100 border-green-500',
-      ];
-      @endphp
-
-      <div class="border-l-4 p-4 {{ $severityColors[$priority['severity']] ?? 'bg-gray-100 border-gray-400' }}">
-
-        <div class="font-semibold">
-          {{ $priority['message'] ?? '' }}
-        </div>
-
-        <div class="text-sm text-gray-600">
-          Kategorie: {{ $priority['category'] ?? '-' }} |
-          Priorität: {{ strtoupper($priority['severity'] ?? '-') }}
-        </div>
-
-      </div>
-
-      @endforeach
-
-    </div>
-
-  </div>
 
 </div>
 
