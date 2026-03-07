@@ -60,7 +60,39 @@ class ReportController extends Controller
 
     $report->load('results');
 
-    return view('reports.show', compact('report'));
+    $timelineQuery = Report::query()
+      ->where('url', $report->url)
+      ->orderBy('started_at');
+
+    if (!is_null($report->keyword) && !is_null($report->city)) {
+      $timelineQuery
+        ->where('keyword', $report->keyword)
+        ->where('city', $report->city);
+    }
+
+    if (auth()->check()) {
+      $timelineQuery->where('user_id', auth()->id());
+    }
+
+    $timelineReports = $timelineQuery->get(['score', 'started_at']);
+
+    $timeline = [
+      'labels' => $timelineReports
+        ->pluck('started_at')
+        ->map(fn($startedAt) => $startedAt ? date('d.m.Y H:i', strtotime((string) $startedAt)) : '—')
+        ->values()
+        ->all(),
+      'data' => $timelineReports
+        ->pluck('score')
+        ->map(fn($score) => is_numeric($score) ? (float) $score : null)
+        ->values()
+        ->all(),
+    ];
+
+    return view('reports.show', [
+      'report' => $report,
+      'timeline' => $timeline,
+    ]);
   }
 
   public function compare(Request $request)
