@@ -10,6 +10,21 @@ $keyword = $report->keyword ?: '—';
 $city = $report->city ?: '—';
 $domain = parse_url($report->url, PHP_URL_HOST) ?: $report->url;
 $createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
+$normalizedStatus = match ($report->status) {
+  'queued' => 'queued',
+  'processing', 'running' => 'processing',
+  'done', 'completed' => 'done',
+  'failed' => 'failed',
+  default => 'queued',
+};
+$statusMeta = [
+  'queued' => ['label' => 'In Warteschlange', 'icon' => '⏳', 'class' => 'text-yellow-700 bg-yellow-50 border-yellow-200'],
+  'processing' => ['label' => 'Analyse läuft', 'icon' => '⚙', 'class' => 'text-blue-700 bg-blue-50 border-blue-200'],
+  'done' => ['label' => 'Fertig', 'icon' => '✓', 'class' => 'text-green-700 bg-green-50 border-green-200'],
+  'failed' => ['label' => 'Fehler', 'icon' => '⚠', 'class' => 'text-red-700 bg-red-50 border-red-200'],
+];
+$currentStatus = $statusMeta[$normalizedStatus];
+$showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
 @endphp
 
 <div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
@@ -27,6 +42,25 @@ $createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
       <div class="text-sm text-gray-600 pt-2">{{ $createdAt }}</div>
       <div class="text-sm"><strong>Score:</strong> {{ $report->score }}</div>
       <div class="text-sm"><strong>Rating:</strong> {{ $data['rating']['label'] ?? '-' }}</div>
+      <div class="pt-3">
+        <div class="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium {{ $currentStatus['class'] }}">
+          <span>{{ $currentStatus['icon'] }}</span>
+          <span>Status: {{ $currentStatus['label'] }}</span>
+        </div>
+      </div>
+
+      @if($showLoadingState)
+      <div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800" id="reportLoadingState">
+        <div class="flex items-center gap-3">
+          <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-300 border-t-blue-700"></span>
+          <span>Die Analyse wird gerade durchgeführt.</span>
+        </div>
+
+        @if($normalizedStatus === 'queued')
+        <div class="mt-2 text-xs text-blue-700">Die Analyse befindet sich in der Warteschlange.</div>
+        @endif
+      </div>
+      @endif
     </div>
   </div>
 
@@ -211,6 +245,53 @@ $createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
 @endsection
 
 @section('scripts')
+<script>
+  (() => {
+    const reportId = @json($report->id);
+    let pollTimer = null;
+
+    const normalizeStatus = (status) => {
+      if (status === 'processing' || status === 'running') return 'processing';
+      if (status === 'done' || status === 'completed') return 'done';
+      if (status === 'failed') return 'failed';
+      return 'queued';
+    };
+
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/reports/${reportId}/status`, {
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+          },
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        const normalized = normalizeStatus(data.status);
+
+        if (normalized === 'done') {
+          if (pollTimer) {
+            clearInterval(pollTimer);
+          }
+          window.location.reload();
+        }
+      } catch (error) {
+        // Silent fail to avoid user disruption while polling.
+      }
+    };
+
+    const initialStatus = @json($normalizedStatus);
+    if (initialStatus === 'queued' || initialStatus === 'processing') {
+      pollTimer = setInterval(pollStatus, 3000);
+      pollStatus();
+    }
+  })();
+</script>
 @if(count($timeline['data'] ?? []) >= 2)
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
