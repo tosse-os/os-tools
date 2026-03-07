@@ -6,18 +6,27 @@
 $result = $report->results->first();
 $data = $result?->payload ?? [];
 $modules = config('seo_modules');
+$keyword = $report->keyword ?: '—';
+$city = $report->city ?: '—';
+$domain = parse_url($report->url, PHP_URL_HOST) ?: $report->url;
+$createdAt = $report->created_at?->format('d.m.Y H:i') ?? '—';
 @endphp
 
 <div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
 
-  <div>
-    <h1 class="text-2xl font-semibold mb-4">Local SEO Analyse</h1>
+  <div class="space-y-4">
+    <a href="{{ url('/reports') }}" class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition">
+      ← Zurück zu Reports
+    </a>
 
-    <div class="space-y-1 text-sm">
-      <div><strong>URL:</strong> {{ $report->url }}</div>
-      <div><strong>Status:</strong> {{ $report->status }}</div>
-      <div><strong>Score:</strong> {{ $report->score }}</div>
-      <div><strong>Rating:</strong> {{ $data['rating']['label'] ?? '-' }}</div>
+    <h1 class="text-2xl font-semibold">Local SEO Analyse</h1>
+
+    <div class="space-y-1">
+      <div class="text-2xl font-semibold">{{ $keyword }} • {{ $city }}</div>
+      <div class="text-lg text-gray-700">{{ $domain }}</div>
+      <div class="text-sm text-gray-600 pt-2">{{ $createdAt }}</div>
+      <div class="text-sm"><strong>Score:</strong> {{ $report->score }}</div>
+      <div class="text-sm"><strong>Rating:</strong> {{ $data['rating']['label'] ?? '-' }}</div>
     </div>
   </div>
 
