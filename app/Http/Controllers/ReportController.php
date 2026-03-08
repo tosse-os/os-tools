@@ -91,19 +91,16 @@ class ReportController extends Controller
         ->all(),
     ];
 
-    $timelineCount = $timelineReports->count();
-    $latestContextReport = $timelineCount > 0
-      ? $timelineReports->last()
-      : null;
-    $previousContextReport = $timelineCount > 1
-      ? $timelineReports->slice(-2, 1)->first()
+    $currentReportPosition = $timelineReports->search(fn($timelineReport) => $timelineReport->id === $report->id);
+    $previousContextReport = is_int($currentReportPosition) && $currentReportPosition > 0
+      ? $timelineReports->get($currentReportPosition - 1)
       : null;
 
     $regression = null;
     $moduleRegressions = [];
 
-    if ($latestContextReport && $previousContextReport) {
-      $latestScore = is_numeric($latestContextReport->score) ? (float) $latestContextReport->score : null;
+    if ($previousContextReport) {
+      $latestScore = is_numeric($report->score) ? (float) $report->score : null;
       $previousScore = is_numeric($previousContextReport->score) ? (float) $previousContextReport->score : null;
 
       if ($latestScore !== null && $previousScore !== null) {
@@ -116,18 +113,17 @@ class ReportController extends Controller
         }
       }
 
-      $latestReportModel = Report::with('results')->find($latestContextReport->id);
       $previousReportModel = Report::with('results')->find($previousContextReport->id);
-      $latestBreakdown = $latestReportModel ? $this->extractBreakdown($latestReportModel) : [];
+      $latestBreakdown = $this->extractBreakdown($report);
       $previousBreakdown = $previousReportModel ? $this->extractBreakdown($previousReportModel) : [];
 
       $trackedModules = [
-        'h1' => 'H1 Regression',
-        'title' => 'Title Regression',
-        'content' => 'Content Regression',
-        'schema' => 'Schema Regression',
-        'nap' => 'Nap Regression',
-        'consistency' => 'Consistency Regression',
+        'h1' => 'H1',
+        'title' => 'Title',
+        'content' => 'Content',
+        'schema' => 'Schema',
+        'nap' => 'Nap',
+        'consistency' => 'Consistency',
       ];
 
       foreach ($trackedModules as $moduleKey => $label) {
@@ -141,7 +137,7 @@ class ReportController extends Controller
         $moduleDelta = (float) $latestModuleScore - (float) $previousModuleScore;
         if ($moduleDelta < -3) {
           $moduleRegressions[] = [
-            'label' => $label,
+            'label' => $label . ' Regression',
             'delta' => $moduleDelta,
             'drop' => abs($moduleDelta),
           ];
@@ -149,83 +145,41 @@ class ReportController extends Controller
       }
     }
 
-    $insightRules = [
-      [
-        'module' => 'content',
-        'label' => 'Content',
-        'condition' => fn($score) => $score < 5,
-        'title' => 'Content zu schwach',
-        'recommendation' => 'Empfehlung: Textumfang erhöhen und Keyword häufiger integrieren',
-      ],
-      [
-        'module' => 'title',
-        'label' => 'Title',
-        'condition' => fn($score) => $score < 15,
-        'title' => 'Title Optimierung möglich',
-        'recommendation' => 'Empfehlung: Keyword näher an den Anfang setzen',
-      ],
-      [
-        'module' => 'h1',
-        'label' => 'H1',
-        'condition' => fn($score) => $score < 10,
-        'title' => 'H1 enthält Keyword nicht optimal',
-        'recommendation' => null,
-      ],
-      [
-        'module' => 'schema',
-        'label' => 'Schema',
-        'condition' => fn($score) => $score === 0.0,
-        'title' => 'LocalBusiness Schema fehlt',
-        'recommendation' => null,
-      ],
-      [
-        'module' => 'nap',
-        'label' => 'NAP',
-        'condition' => fn($score) => $score < 10,
-        'title' => 'NAP Inkonsistenz erkannt',
-        'recommendation' => null,
-      ],
-    ];
-
     $breakdown = $this->extractBreakdown($report);
     $insights = [];
 
-    foreach ($insightRules as $rule) {
-      $score = data_get($breakdown, $rule['module'] . '.score');
-      $maxScore = data_get($breakdown, $rule['module'] . '.max');
+    $contentScore = data_get($breakdown, 'content.score');
+    if (is_numeric($contentScore) && (float) $contentScore < 5) {
+      $insights[] = [
+        'severity' => 1,
+        'title' => 'Content zu schwach',
+        'recommendation' => 'Empfehlung: mehr Text und Keyword Integration',
+        'score' => (float) $contentScore,
+      ];
+    }
 
-      if (!is_numeric($score)) {
-        continue;
-      }
-
-      $scoreValue = (float) $score;
-      if (($rule['condition'])($scoreValue)) {
-        $insights[] = [
-          'type' => 'warning',
-          'module' => $rule['label'],
-          'title' => $rule['title'],
-          'recommendation' => $rule['recommendation'],
-          'score' => $scoreValue,
-          'max_score' => is_numeric($maxScore) ? (float) $maxScore : null,
-        ];
-      }
+    $titleScore = data_get($breakdown, 'title.score');
+    if (is_numeric($titleScore) && (float) $titleScore < 15) {
+      $insights[] = [
+        'severity' => 2,
+        'title' => 'Title Optimierung möglich',
+        'recommendation' => null,
+        'score' => (float) $titleScore,
+      ];
     }
 
     $schemaScore = data_get($breakdown, 'schema.score');
-    if (is_numeric($schemaScore) && (float) $schemaScore > 0) {
-      $schemaMaxScore = data_get($breakdown, 'schema.max');
+    if (is_numeric($schemaScore) && (float) $schemaScore === 0.0) {
       $insights[] = [
-        'type' => 'success',
-        'module' => 'Schema',
-        'title' => 'Schema korrekt',
+        'severity' => 0,
+        'title' => 'Schema fehlt',
         'recommendation' => null,
         'score' => (float) $schemaScore,
-        'max_score' => is_numeric($schemaMaxScore) ? (float) $schemaMaxScore : null,
       ];
     }
 
     $insights = collect($insights)
-      ->sortBy(fn($item) => $item['score'])
+      ->sortBy(fn($item) => [$item['severity'], $item['score']])
       ->values()
       ->all();
 
