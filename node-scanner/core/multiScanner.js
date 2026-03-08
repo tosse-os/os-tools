@@ -1,15 +1,15 @@
 const puppeteer = require('puppeteer');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
-const statusCheck = require('../checks/statusCheck');
 const crawlLinks = require('../crawl/crawlLinks');
 const fs = require('fs');
 const path = require('path');
 
-const logFile = path.resolve(__dirname, '..', 'storage', 'logs', 'node-scanner.log');
+const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 
 function log(message) {
   try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
     fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
   } catch { }
 }
@@ -21,6 +21,147 @@ function sleep(ms) {
 function toPositiveInt(value, fallback) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
+}
+
+function decodeHtmlEntities(text) {
+  return String(text || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
+function stripTags(html) {
+  return decodeHtmlEntities(String(html || '').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractFromHtml(html) {
+  const safeHtml = String(html || '');
+  const titleMatch = safeHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+
+  const h1 = Array.from(safeHtml.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)).map(match => stripTags(match[1]));
+
+  const meta = Array.from(safeHtml.matchAll(/<meta\s+[^>]*>/gi)).map(match => match[0]);
+
+  const schema = Array.from(
+    safeHtml.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+  ).map(match => match[1].trim());
+
+  const links = Array.from(safeHtml.matchAll(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi)).map(match => match[1]);
+
+  const content = stripTags(
+    safeHtml
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<template[\s\S]*?<\/template>/gi, ' ')
+  );
+
+  const images = Array.from(safeHtml.matchAll(/<img\b[^>]*>/gi)).map(match => {
+    const tag = match[0];
+    const srcMatch = tag.match(/\ssrc=["']([^"']*)["']/i);
+    const hasAlt = /\s+alt\s*=/.test(tag);
+    const altMatch = tag.match(/\salt=["']([^"']*)["']/i);
+
+    return {
+      src: srcMatch ? srcMatch[1] : '',
+      alt: hasAlt ? (altMatch ? decodeHtmlEntities(altMatch[1]) : '') : null
+    };
+  });
+
+  const headings = Array.from(safeHtml.matchAll(/<(h[1-6])[^>]*>([\s\S]*?)<\/\1>/gi)).map(match => ({
+    tag: match[1].toLowerCase(),
+    text: stripTags(match[2])
+  }));
+
+  return {
+    title: titleMatch ? stripTags(titleMatch[1]) : '',
+    h1,
+    meta,
+    content,
+    schema,
+    links,
+    images,
+    headings
+  };
+}
+
+function buildAltCheckFromImages(images) {
+  const altMissing = images.filter(img => img.alt === null).length;
+  const altEmpty = images.filter(img => img.alt !== null && img.alt.trim() === '').length;
+
+  return {
+    imageCount: images.length,
+    altMissing,
+    altEmpty,
+    preview: images.slice(0, 10)
+  };
+}
+
+function buildHeadingCheckFromHeadings(headings) {
+  const count = headings.reduce((acc, heading) => {
+    acc[heading.tag] = (acc[heading.tag] || 0) + 1;
+    return acc;
+  }, {});
+
+  const errors = [];
+  const h1Count = count.h1 || 0;
+
+  if (h1Count > 1) {
+    errors.push('Mehr als eine H1 gefunden');
+  } else if (h1Count === 0) {
+    errors.push('Keine H1 gefunden');
+  }
+
+  const emptyHeadings = headings.filter(heading => heading.text === '');
+  if (emptyHeadings.length > 0) {
+    errors.push(`${emptyHeadings.length} leere Überschrift(en)`);
+  }
+
+  return {
+    count,
+    list: headings.slice(0, 10),
+    errors
+  };
+}
+
+function detectRenderMode(html, contentLength) {
+  const hasAppRoot = /<div\s+id=["'](?:app|root)["'][^>]*>/i.test(html);
+  const hasLargeBundle = /<script[^>]+(?:src=["'][^"']*(?:bundle|main|app|chunk)[^"']*\.js[^"']*["'])[^>]*>/i.test(html);
+  const isContentVerySmall = contentLength < 200;
+
+  return hasAppRoot || hasLargeBundle || isContentVerySmall;
+}
+
+async function fetchRawHtml(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent': 'Mozilla/5.0 (compatible; OS-Scanner/1.0)'
+      }
+    });
+
+    const html = await response.text();
+
+    return {
+      status: response.status,
+      html,
+      contentLength: Buffer.byteLength(html, 'utf8'),
+      finalUrl: response.url || url
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function asyncPool(poolLimit, array, iteratorFn) {
@@ -158,26 +299,87 @@ if (!fs.existsSync(resultDir)) {
         }
 
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+          const preFetched = await fetchRawHtml(url, pageTimeoutMs);
+          const renderMode = detectRenderMode(preFetched.html, preFetched.contentLength);
 
-          result.title = await page.title();
+          log(`URL ${url} | status=${preFetched.status} | contentLength=${preFetched.contentLength} | mode=${renderMode ? 'render' : 'html'}`);
+
+          result.title = '';
 
           if (options.checks.includes('status')) {
-            result.statusCheck = await statusCheck(page, url);
+            result.statusCheck = {
+              status: preFetched.status,
+              redirected: preFetched.finalUrl && preFetched.finalUrl !== url,
+              finalUrl: preFetched.finalUrl || url,
+              error: null
+            };
           }
 
-          if (options.checks.includes('alt')) {
-            result.altCheck = await altCheck(page);
-          }
+          if (!renderMode) {
+            const extracted = extractFromHtml(preFetched.html);
+            result.title = extracted.title;
 
-          if (options.checks.includes('heading')) {
-            result.headingCheck = await headingCheck(page);
+            if (options.checks.includes('alt')) {
+              result.altCheck = buildAltCheckFromImages(extracted.images);
+            }
+
+            if (options.checks.includes('heading')) {
+              result.headingCheck = buildHeadingCheckFromHeadings(extracted.headings);
+            }
+
+            log(`HTML mode used for ${url}`);
+          } else {
+            const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+
+            result.title = await page.title();
+
+            if (options.checks.includes('status')) {
+              result.statusCheck = {
+                status: response ? response.status() : 'unknown',
+                redirected: response ? response.url() !== url : false,
+                finalUrl: response ? response.url() : url,
+                error: null
+              };
+            }
+
+            const renderedExtraction = await page.evaluate(() => {
+              const h1 = Array.from(document.querySelectorAll('h1')).map(element => element.innerText || '');
+              const meta = Array.from(document.querySelectorAll('meta')).map(element => element.outerHTML || '');
+              const schema = Array.from(document.querySelectorAll('script[type="application/ld+json"]')).map(element => element.innerText || '');
+              const links = Array.from(document.querySelectorAll('a[href]')).map(element => element.getAttribute('href') || '').filter(Boolean);
+              const clone = document.body.cloneNode(true);
+              clone.querySelectorAll('script, style, noscript, template').forEach(element => element.remove());
+              const content = clone.innerText || '';
+              return { h1, meta, schema, links, content };
+            });
+
+            if (options.checks.includes('alt')) {
+              result.altCheck = await altCheck(page);
+            }
+
+            if (options.checks.includes('heading')) {
+              result.headingCheck = await headingCheck(page);
+            }
+
+            log(
+              `Render mode used for ${url} | h1=${renderedExtraction.h1.length} | meta=${renderedExtraction.meta.length} | schema=${renderedExtraction.schema.length} | links=${renderedExtraction.links.length} | contentLength=${renderedExtraction.content.length}`
+            );
           }
 
           success = true;
           break;
         } catch (err) {
           result.error = err.message;
+
+          if (options.checks.includes('status') && !result.statusCheck) {
+            result.statusCheck = {
+              status: 'error',
+              redirected: false,
+              finalUrl: url,
+              error: err.message
+            };
+          }
+
           log(`Fehler bei ${url} (Versuch ${attempt}/${maxRetries}): ${err.message}`);
 
           if (attempt < maxRetries) {
