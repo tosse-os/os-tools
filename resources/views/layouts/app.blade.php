@@ -33,6 +33,12 @@
           </a>
           @endforeach
 
+          <a href="{{ route('projects.index') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('analyses.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Projects
+          </a>
+
+
           <a href="{{ route('reports.index') }}"
             class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Reports
