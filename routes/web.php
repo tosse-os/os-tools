@@ -9,6 +9,8 @@ use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
 use App\Http\Controllers\ScanController;
 use App\Http\Controllers\AdminSettingsController;
+use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\AnalysisController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -46,6 +48,18 @@ Route::post('/multiscan/abort', [ScanController::class, 'abort']);
 
 Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
 Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
+
+
+/*
+|--------------------------------------------------------------------------
+| PROJECTS & ANALYSES
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
+Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+
+Route::get('/analyses/{analysis}', [AnalysisController::class, 'show'])->name('analyses.show');
 
 /*
 |--------------------------------------------------------------------------
