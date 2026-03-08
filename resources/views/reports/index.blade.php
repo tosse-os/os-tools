@@ -57,7 +57,8 @@
         <summary class="list-none cursor-pointer p-4 hover:bg-gray-50">
           <div class="flex justify-between items-start gap-4">
             <div>
-              <div class="font-semibold text-gray-900">{{ $context['keyword'] }} • {{ $context['city'] }}</div>
+              <div class="font-semibold text-gray-900">Project: {{ $context['project'] }}</div>
+              <div class="text-sm text-gray-700">{{ $context['keyword'] }} • {{ $context['city'] }}</div>
               <div class="text-sm text-gray-700">Domain: {{ $context['domain'] }}</div>
               <div class="text-xs text-gray-500">{{ $context['reports_count'] }} reports</div>
             </div>
@@ -70,6 +71,7 @@
         <div class="px-4 pb-4 space-y-3 border-t bg-gray-50/40">
           @foreach($context['reports'] as $report)
             @php
+              $project = data_get($report, 'analysis.project.name') ?: '—';
               $keyword = $report->keyword ?: '—';
               $city = $report->city ?: '—';
               $domain = parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—';
@@ -104,7 +106,8 @@
                     @checked(collect(request('reports', old('reports', [])))->contains($report->id))>
 
                   <a href="{{ route('reports.show', $report) }}" class="block space-y-1 text-sm">
-                    <div class="font-semibold text-gray-900">{{ $keyword }} • {{ $city }}</div>
+                    <div class="font-semibold text-gray-900">Project: {{ $project }}</div>
+                    <div class="text-gray-700">{{ $keyword }} • {{ $city }}</div>
                     <div class="text-gray-700">{{ $domain }}</div>
                     <div class="text-xs text-gray-500">{{ $startedAt ? $startedAt->format('d.m.Y H:i') : '—' }}</div>
                     <div class="pt-1">

@@ -18,6 +18,7 @@ class ReportController extends Controller
     $this->applyArchiveFilters($query, $request);
 
     $reports = $query
+      ->with('analysis.project')
       ->latest()
       ->limit(60)
       ->get();
@@ -41,6 +42,7 @@ class ReportController extends Controller
     $this->applyArchiveFilters($query, $request);
 
     $reports = $query
+      ->with('analysis.project')
       ->latest()
       ->get();
 
@@ -58,13 +60,17 @@ class ReportController extends Controller
       abort(403);
     }
 
-    $report->load('results');
+    $report->load(['results', 'analysis.project']);
 
     $timelineQuery = Report::query()->orderBy('started_at');
 
-    $this->applyContextMatch($timelineQuery, 'url', $report->url);
-    $this->applyContextMatch($timelineQuery, 'keyword', $report->keyword);
-    $this->applyContextMatch($timelineQuery, 'city', $report->city);
+    if ($report->analysis_id) {
+      $timelineQuery->where('analysis_id', $report->analysis_id);
+    } else {
+      $this->applyContextMatch($timelineQuery, 'url', $report->url);
+      $this->applyContextMatch($timelineQuery, 'keyword', $report->keyword);
+      $this->applyContextMatch($timelineQuery, 'city', $report->city);
+    }
 
     if (auth()->check()) {
       $timelineQuery->where('user_id', auth()->id());
@@ -470,6 +476,7 @@ class ReportController extends Controller
 
         return [
           'context_key' => $contextKey,
+          'project' => $this->valueOrDash(data_get($latestReport, 'analysis.project.name')),
           'keyword' => $this->valueOrDash(optional($latestReport)->keyword),
           'city' => $this->valueOrDash(optional($latestReport)->city),
           'domain' => $this->extractDomain(optional($latestReport)->url),
@@ -498,6 +505,10 @@ class ReportController extends Controller
 
   private function buildContextKey(Report $report): string
   {
+    if (!empty($report->analysis_id)) {
+      return (string) $report->analysis_id;
+    }
+
     $url = trim((string) ($report->url ?? ''));
     $keyword = $this->valueOrDash($report->keyword);
     $city = $this->valueOrDash($report->city);
