@@ -52,7 +52,8 @@
           <summary class="list-none cursor-pointer p-4 bg-gray-50 hover:bg-gray-100">
             <div class="flex justify-between gap-4">
               <div>
-                <div class="font-semibold text-gray-900">{{ $context['keyword'] }} • {{ $context['city'] }}</div>
+                <div class="font-semibold text-gray-900">Project: {{ $context['project'] }}</div>
+                <div class="text-sm text-gray-700">{{ $context['keyword'] }} • {{ $context['city'] }}</div>
                 <div class="text-sm text-gray-700">Domain: {{ $context['domain'] }}</div>
                 <div class="text-xs text-gray-500">{{ $context['reports_count'] }} reports</div>
               </div>
@@ -68,6 +69,7 @@
                 <tr>
                   <th class="px-4 py-3 border-b">Vergleich</th>
                   <th class="px-4 py-3 border-b">Date</th>
+                  <th class="px-4 py-3 border-b">Project</th>
                   <th class="px-4 py-3 border-b">Keyword</th>
                   <th class="px-4 py-3 border-b">City</th>
                   <th class="px-4 py-3 border-b">Domain</th>
@@ -79,6 +81,7 @@
               <tbody>
                 @foreach($context['reports'] as $report)
                   @php
+                    $project = data_get($report, 'analysis.project.name') ?: '—';
                     $keyword = $report->keyword ?: '—';
                     $city = $report->city ?: '—';
                     $domain = parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—';
@@ -98,6 +101,7 @@
                         @checked(collect(request('reports', old('reports', [])))->contains($report->id))>
                     </td>
                     <td class="px-4 py-3 border-b whitespace-nowrap">{{ $startedAt ? $startedAt->format('d.m.Y H:i') : '—' }}</td>
+                    <td class="px-4 py-3 border-b">{{ $project }}</td>
                     <td class="px-4 py-3 border-b">{{ $keyword }}</td>
                     <td class="px-4 py-3 border-b">{{ $city }}</td>
                     <td class="px-4 py-3 border-b"><div class="truncate max-w-xs">{{ $domain }}</div></td>

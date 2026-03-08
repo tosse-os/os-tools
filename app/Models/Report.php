@@ -15,6 +15,7 @@ class Report extends Model
     protected $fillable = [
         'id',
         'user_id',
+        'analysis_id',
         'type',
         'url',
         'keyword',
@@ -39,5 +40,10 @@ class Report extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function analysis()
+    {
+        return $this->belongsTo(Analysis::class);
     }
 }

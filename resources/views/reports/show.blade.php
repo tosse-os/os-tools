@@ -6,6 +6,7 @@
 $result = $report->results->first();
 $data = $result?->payload ?? [];
 $modules = config('seo_modules');
+$project = data_get($report, 'analysis.project.name') ?: '—';
 $keyword = $report->keyword ?: '—';
 $city = $report->city ?: '—';
 $domain = parse_url($report->url, PHP_URL_HOST) ?: $report->url;
@@ -37,6 +38,7 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
     <h1 class="text-2xl font-semibold">Local SEO Analyse</h1>
 
     <div class="space-y-1">
+      <div class="text-sm text-gray-600"><strong>Project:</strong> {{ $project }}</div>
       <div class="text-2xl font-semibold">{{ $keyword }} • {{ $city }}</div>
       <div class="text-lg text-gray-700">{{ $domain }}</div>
       <div class="text-sm text-gray-600 pt-2">{{ $createdAt }}</div>

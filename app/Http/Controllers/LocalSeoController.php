@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Report;
-use Illuminate\Support\Str;
 use App\Jobs\RunLocalSeo;
+use App\Models\Analysis;
+use App\Models\Project;
+use App\Models\Report;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class LocalSeoController extends Controller
 {
@@ -22,9 +24,17 @@ class LocalSeoController extends Controller
       'city' => 'required|string'
     ]);
 
+    $analysis = $this->findOrCreateAnalysis(
+      auth()->id(),
+      $request->url,
+      $request->keyword,
+      $request->city,
+    );
+
     $report = Report::create([
       'id' => (string) Str::uuid(),
       'user_id' => auth()->id(),
+      'analysis_id' => $analysis->id,
       'type' => 'local_seo',
       'url' => $request->url,
       'keyword' => $request->keyword,
@@ -41,5 +51,33 @@ class LocalSeoController extends Controller
     return response()->json([
       'reportId' => $report->id
     ]);
+  }
+
+  private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+  {
+    $domain = parse_url($url, PHP_URL_HOST) ?: $url;
+
+    $project = Project::firstOrCreate(
+      [
+        'user_id' => $userId,
+        'domain' => $domain,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+        'name' => $domain,
+      ],
+    );
+
+    return Analysis::firstOrCreate(
+      [
+        'project_id' => $project->id,
+        'url' => $url,
+        'keyword' => $keyword,
+        'city' => $city,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+      ],
+    );
   }
 }
