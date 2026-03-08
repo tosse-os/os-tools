@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
 use App\Http\Controllers\ScanController;
+use App\Http\Controllers\AdminSettingsController;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -77,3 +78,12 @@ Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
 Route::view('/logs/live', 'logs.live')->name('logs.live');
 
 Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN SETTINGS
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/admin/settings', [AdminSettingsController::class, 'index'])->name('admin.settings.index');
+Route::post('/admin/settings', [AdminSettingsController::class, 'update'])->name('admin.settings.update');

@@ -53,6 +53,11 @@
             Queue Monitor
           </a>
 
+          <a href="{{ route('admin.settings.index') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('admin.settings.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Settings
+          </a>
+
         </nav>
 
       </div>

@@ -9,7 +9,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 
 class RunScan implements ShouldQueue
@@ -39,7 +38,13 @@ class RunScan implements ShouldQueue
         $options = [
             'url' => $scan->url,
             'checks' => $this->checks,
-            'maxPages' => config('tools.limits.max_urls_per_scan', 6),
+            'max_pages' => config('seo.max_pages', 20),
+            'max_depth' => config('seo.max_depth', 2),
+            'page_timeout' => config('seo.page_timeout', 30),
+            'max_parallel_pages' => config('seo.max_parallel_pages', 3),
+            'max_retries' => config('seo.max_retries', 3),
+            'retry_delay' => config('seo.retry_delay', 10),
+            'max_scan_time' => config('seo.max_scan_time', 300),
         ];
 
         $process = new Process([
