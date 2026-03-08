@@ -81,7 +81,7 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
     @endif
 
     @foreach($moduleRegressions as $moduleRegression)
-    <div class="text-sm text-red-800">⚠ {{ $moduleRegression['label'] }} ({{ number_format($moduleRegression['delta'], 1) }})</div>
+    <div class="text-sm text-red-800">⚠ {{ $moduleRegression['label'] }}</div>
     @endforeach
   </div>
   @endif
@@ -101,11 +101,11 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
 
     <div class="space-y-3">
       @forelse($insights as $insight)
-      <div class="rounded-lg border p-4 {{ $insight['type'] === 'success' ? 'border-green-200 bg-green-50 text-green-800' : 'border-yellow-200 bg-yellow-50 text-yellow-900' }}">
+      <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-900">
         <div class="font-semibold">
-          {!! $insight['type'] === 'success' ? '✓' : '⚠' !!} {{ $insight['title'] }}
+          ⚠ {{ $insight['title'] }}
         </div>
-        <div class="text-sm mt-1">Score {{ number_format($insight['score'], 0) }}{{ is_numeric($insight['max_score']) ? ' / ' . number_format($insight['max_score'], 0) : '' }}</div>
+        <div class="text-sm mt-1">Score {{ number_format($insight['score'], 0) }}</div>
         @if($insight['recommendation'])
         <div class="text-sm mt-1">{{ $insight['recommendation'] }}</div>
         @endif
