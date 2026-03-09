@@ -269,7 +269,7 @@ try {
   process.exit(1);
 }
 
-const scanId = process.argv[3];
+const scanId = options.scan_id || process.argv[3] || 'unknown';
 const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', scanId);
 
 if (!fs.existsSync(resultDir)) {
@@ -319,7 +319,16 @@ if (!fs.existsSync(resultDir)) {
   let absoluteUrls = [];
 
   try {
+    console.log('[SCAN TRACE] scanner_start', {
+      scan_id: scanId,
+      url: options.url,
+      max_pages: options.max_pages,
+      max_depth: options.max_depth
+    });
+
     absoluteUrls = await crawlLinks(seedPage, options.url, {
+      ...options,
+      scan_id: scanId,
       max_pages: maxPages,
       max_depth: maxDepth,
       page_timeout: pageTimeoutSeconds,
@@ -327,10 +336,19 @@ if (!fs.existsSync(resultDir)) {
       retry_delay: retryDelaySeconds,
       logger: (message) => log(`[scanner] ${message}`)
     });
+
+    console.log('[SCAN TRACE] crawl_result', {
+      scan_id: scanId,
+      urls_found: absoluteUrls.length
+    });
   } catch (err) {
     log(`Fehler beim Crawlen der Startseite ${options.url}: ${err.message}`);
   } finally {
     await seedPage.close();
+  }
+
+  if (absoluteUrls.length === 1 && absoluteUrls[0] === options.url) {
+    console.warn('[SCAN WARNING] only seed url discovered');
   }
 
   if (absoluteUrls.length === 0) {
