@@ -35,7 +35,7 @@ function normalizeHost(hostname) {
 
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const log = createLogger(options.logger);
-  const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 10);
+  const maxPages = Math.max(2, toPositiveInt(options.max_pages ?? options.maxPages, 10));
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
   const maxScanTimeSeconds = toPositiveInt(options.max_scan_time ?? options.maxScanTime, 300);
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
