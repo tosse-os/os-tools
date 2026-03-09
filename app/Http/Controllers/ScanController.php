@@ -31,12 +31,21 @@ class ScanController extends Controller
             'status' => 'queued'
         ]);
 
-        Log::debug('🔍 Empfange Checks vom Frontend:', [
-            'checks' => $request->input('checks')
+        Log::debug('[SCAN TRACE] controller_start', [
+            'scan_id' => $scan->id,
+            'url' => $request->url,
+            'checks' => $request->input('checks', []),
+        ]);
+
+        Log::debug('[SCAN TRACE] dispatching_scan_job', [
+            'scan_id' => $scan->id,
         ]);
 
         RunScan::dispatch($scan->id, $request->input('checks', []));
 
+        Log::debug('[SCAN TRACE] job_dispatched', [
+            'scan_id' => $scan->id,
+        ]);
 
         return response()->json(['scanId' => $scan->id]);
     }

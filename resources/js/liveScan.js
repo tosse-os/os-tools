@@ -21,6 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = form.url.value;
     const checks = Array.from(document.querySelectorAll('.check-option:checked')).map(el => el.value);
 
+    console.log('[SCAN TRACE] button_clicked', {
+      url,
+      checks,
+    });
+
     tbody.innerHTML = '';
     currentIndex = 0;
     progressEl.textContent = 'Scan gestartet...';
@@ -29,6 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
     failedAlert.classList.add('hidden');
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
+
+    console.log('[SCAN TRACE] sending_scan_request');
 
     const res = await fetch("/scan", {
       method: 'POST',
@@ -40,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const data = await res.json();
+    console.log('[SCAN TRACE] scan_request_response', data);
     if (!data.scanId) return;
 
     scanId = data.scanId;

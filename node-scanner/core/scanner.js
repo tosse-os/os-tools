@@ -17,8 +17,9 @@ function log(message) {
   }
 }
 
-console.log('[SCANNER] start');
-console.log('[SCANNER] arguments', process.argv);
+console.log('[SCAN TRACE] scanner_start', {
+  args: process.argv,
+});
 
 let options;
 try {
@@ -29,9 +30,17 @@ try {
   process.exit(1);
 }
 
+console.log('[SCAN TRACE] scanner_config', options);
+
 (async () => {
   const checks = Array.isArray(options.checks) ? options.checks : [];
-  console.log('[SCANNER] starting crawl', options.url);
+  const scanId = options.scan_id || options.scanId || 'unknown';
+  const startUrl = options.url;
+
+  console.log('[SCAN TRACE] crawler_start', {
+    scan_id: scanId,
+    startUrl,
+  });
   log(
     `[scanner] scan started | url=${options.url} | checks=${checks.join(',')} | max_pages=${options.max_pages ?? ''} | max_depth=${options.max_depth ?? ''} | max_scan_time=${options.max_scan_time ?? ''}`
   );
@@ -41,11 +50,31 @@ try {
 
   try {
     browser = await puppeteer.launch({ headless: 'new' });
+    console.log('[SCAN TRACE] browser_launched', {
+      scan_id: scanId,
+    });
     const page = await browser.newPage();
 
-    page.on('console', (msg) => console.log('[PAGE LOG]', msg.text()));
-    page.on('error', (err) => console.error('[PAGE ERROR]', err));
-    page.on('requestfailed', (req) => console.error('[REQUEST FAILED]', req.url()));
+    page.on('console', (msg) => {
+      console.log('[PAGE CONSOLE]', msg.text());
+    });
+
+    page.on('request', (req) => {
+      console.log('[PAGE REQUEST]', req.url());
+    });
+
+    page.on('response', (res) => {
+      console.log('[PAGE RESPONSE]', res.status(), res.url());
+    });
+
+    page.on('requestfailed', (req) => {
+      console.log('[PAGE REQUEST FAILED]', req.url());
+    });
+
+    page.on('error', (err) => {
+      console.log('[PAGE ERROR]', err);
+    });
+
     await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
     const result = {
@@ -71,6 +100,7 @@ try {
       max_retries: options.max_retries,
       retry_delay: options.retry_delay,
       include_link_graph: true,
+      scan_id: scanId,
       logger: (message) => log(`[scanner] ${message}`),
     });
 
