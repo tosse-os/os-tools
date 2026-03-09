@@ -17,26 +17,35 @@ function log(message) {
   }
 }
 
+console.log('[SCANNER] start');
+console.log('[SCANNER] arguments', process.argv);
+
 let options;
 try {
   options = JSON.parse(process.argv[2]);
 } catch (err) {
+  console.error('[SCANNER ERROR]', err);
   console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
   process.exit(1);
 }
 
 (async () => {
   const checks = Array.isArray(options.checks) ? options.checks : [];
+  console.log('[SCANNER] starting crawl', options.url);
   log(
     `[scanner] scan started | url=${options.url} | checks=${checks.join(',')} | max_pages=${options.max_pages ?? ''} | max_depth=${options.max_depth ?? ''} | max_scan_time=${options.max_scan_time ?? ''}`
   );
 
-  const browser = await puppeteer.launch({ headless: 'new' });
-  const page = await browser.newPage();
-
   const results = [];
+  let browser;
 
   try {
+    browser = await puppeteer.launch({ headless: 'new' });
+    const page = await browser.newPage();
+
+    page.on('console', (msg) => console.log('[PAGE LOG]', msg.text()));
+    page.on('error', (err) => console.error('[PAGE ERROR]', err));
+    page.on('requestfailed', (req) => console.error('[REQUEST FAILED]', req.url()));
     await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
     const result = {
@@ -82,11 +91,14 @@ try {
     results.push(result);
     log(`[scanner] scan complete | url=${options.url} | pages_crawled=${result.pages_crawled}`);
   } catch (e) {
+    console.error('[SCANNER ERROR]', e);
     results.push({ url: options.url, error: e.message });
     log(`[scanner] scan failed | url=${options.url} | message=${e.message}`);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
-
-  await browser.close();
 
   console.log(JSON.stringify(results));
 })();

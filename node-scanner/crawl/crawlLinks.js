@@ -52,6 +52,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   log(
     `[crawlLinks] scan started | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`
   );
+  console.log('[CRAWLER] initialized', { startUrl: normalizedStartUrl || startUrl });
 
   if (!normalizedStartUrl) {
     return includeLinkGraph
@@ -149,14 +150,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     log(`[crawlLinks] current crawl depth | url=${url} | depth=${depth}`);
     log(`[crawlLinks] current queue size | size=${queue.length}`);
     log(`[crawlLinks] url crawled | url=${url} | depth=${depth}`);
+    console.log('[CRAWLER] visiting', url);
 
     if (visitedIdentities.has(currentIdentity)) {
       log(`[crawlLinks] links rejected (duplicate) | url=${url} | reason=already_visited`);
+      console.log('[CRAWLER] skip link', { reason: 'already_visited', url });
       continue;
     }
 
     if (depth > maxDepth) {
       log(`[crawlLinks] links rejected | url=${url} | reason=max_depth_exceeded | depth=${depth}`);
+      console.log('[CRAWLER] skip link', { reason: 'max_depth_exceeded', url });
       continue;
     }
 
@@ -165,7 +169,13 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+          console.log('[CRAWLER] page loaded', url);
+        } catch (err) {
+          console.error('[CRAWLER] navigation error', err);
+          throw err;
+        }
 
         links = await page.$$eval('a[href]', (anchors) =>
           anchors
@@ -178,12 +188,18 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
             .filter((href) => !href.startsWith('javascript:'))
         );
 
+        console.log('[CRAWLER] links extracted', {
+          url,
+          count: links.length,
+        });
+
         success = true;
         break;
       } catch (error) {
         log(
           `[crawlLinks] links rejected | reason=page_load_failed | url=${url} | attempt=${attempt} | message=${error.message}`
         );
+        console.log('[CRAWLER] skip link', { reason: 'page_load_failed', url });
         if (attempt < maxRetries) {
           await sleep(retryDelayMs);
         }
@@ -207,6 +223,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
       if (!normalized) {
         log(`[crawlLinks] links rejected | reason=normalization_failed | source=${url} | candidate=${rawLink}`);
+        console.log('[CRAWLER] skip link', { reason: 'normalization_failed', url: rawLink });
         continue;
       }
 
@@ -215,12 +232,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         parsed = new URL(normalized);
       } catch {
         log(`[crawlLinks] links rejected | reason=parse_failed | source=${url} | candidate=${normalized}`);
+        console.log('[CRAWLER] skip link', { reason: 'parse_failed', url: normalized });
         continue;
       }
 
       const isInternal = normalizeHost(parsed.hostname) === startHost;
       if (!isInternal) {
         log(`[crawlLinks] links rejected (external) | source=${url} | link=${normalized}`);
+        console.log('[CRAWLER] skip link', { reason: 'external', url: normalized });
         continue;
       }
 
@@ -233,17 +252,20 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
       if (nextDepth > maxDepth) {
         log(`[crawlLinks] links rejected | reason=max_depth_reached | link=${normalized} | next_depth=${nextDepth}`);
+        console.log('[CRAWLER] skip link', { reason: 'max_depth_reached', url: normalized });
         continue;
       }
 
       if (visitedUrls.size + queue.length >= maxPages) {
         log(`[crawlLinks] links rejected | reason=max_pages_budget | link=${normalized}`);
+        console.log('[CRAWLER] skip link', { reason: 'max_pages_budget', url: normalized });
         continue;
       }
 
       if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
         stopReason = 'crawl budget reached (max scan time reached)';
         log(`[crawlLinks] links rejected | reason=max_scan_time_reached | link=${normalized}`);
+        console.log('[CRAWLER] skip link', { reason: 'max_scan_time_reached', url: normalized });
         break;
       }
 
@@ -251,12 +273,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
       if (visitedIdentities.has(identity) || queuedIdentities.has(identity)) {
         log(`[crawlLinks] links rejected (duplicate) | link=${normalized} | duplicate_key=${identity}`);
+        console.log('[CRAWLER] skip link', { reason: 'duplicate', url: normalized });
         continue;
       }
 
       queue.push({ url: normalized, depth: nextDepth });
       queuedIdentities.add(identity);
       log(`[crawlLinks] links accepted into crawl queue | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
+      console.log('[CRAWLER] queue push', normalized);
     }
 
     if (stopReason === 'crawl budget reached (max scan time reached)') {
@@ -275,6 +299,9 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   }
 
   log(`[crawlLinks] scan stop | reason=${stopReason || 'completed'} | pages_crawled=${visitedUrls.size} | urls_discovered=${discoveredUrls.size}`);
+  console.log('[CRAWLER] finished', {
+    pages_crawled: visitedUrls.size,
+  });
 
   const crawledUrls = Array.from(visitedUrls).slice(0, maxPages);
 

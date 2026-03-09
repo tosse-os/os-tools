@@ -52,6 +52,11 @@ class RunScan implements ShouldQueue
 
     private function runCrawlerReportScan(Report $report, ReportPersistenceService $reportPersistenceService): void
     {
+        Log::info('[SCAN] Job gestartet', [
+            'scan_id' => $report->id,
+            'url' => $report->url,
+        ]);
+
         $report->update([
             'status' => 'running',
             'started_at' => now(),
@@ -75,7 +80,10 @@ class RunScan implements ShouldQueue
         ]);
 
         $process->setTimeout(null);
+        Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $report->id]);
+        Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         $process->run();
+        Log::info('[SCAN] Node Scanner finished', ['scan_id' => $report->id]);
 
         if (!$process->isSuccessful()) {
             Log::error('Crawler Report Scan fehlgeschlagen', [
@@ -117,6 +125,11 @@ class RunScan implements ShouldQueue
 
     private function runMultiScan(Scan $scan): void
     {
+        Log::info('[SCAN] Job gestartet', [
+            'scan_id' => $scan->id,
+            'url' => $scan->url,
+        ]);
+
         $scan->update(['status' => 'running']);
 
         $options = [
@@ -139,7 +152,10 @@ class RunScan implements ShouldQueue
         ]);
 
         $process->setTimeout(null);
+        Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $scan->id]);
+        Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         $process->run();
+        Log::info('[SCAN] Node Scanner finished', ['scan_id' => $scan->id]);
 
         if (!$process->isSuccessful()) {
             Log::error('RunScan Node Prozess fehlgeschlagen', [
