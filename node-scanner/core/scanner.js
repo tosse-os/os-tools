@@ -17,6 +17,7 @@ function log(message) {
   }
 }
 
+console.log('[SCANNER] start');
 console.log('[SCAN TRACE] scanner_start', {
   args: process.argv,
 });
@@ -41,6 +42,7 @@ console.log('[SCAN TRACE] scanner_config', options);
     scan_id: scanId,
     startUrl,
   });
+  console.log('[CRAWLER] visiting', startUrl);
   log(
     `[scanner] scan started | url=${options.url} | checks=${checks.join(',')} | max_pages=${options.max_pages ?? ''} | max_depth=${options.max_depth ?? ''} | max_scan_time=${options.max_scan_time ?? ''}`
   );
@@ -92,6 +94,7 @@ console.log('[SCAN TRACE] scanner_config', options);
       result.headingCheck = await headingCheck(page);
     }
 
+    // ensure crawler entrypoint is executed
     const linkGraph = await crawlLinks(page, options.url, {
       max_pages: options.max_pages,
       max_depth: options.max_depth,

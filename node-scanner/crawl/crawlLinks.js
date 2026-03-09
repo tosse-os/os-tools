@@ -168,6 +168,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       url,
       depth,
     });
+    console.log('[CRAWLER] visiting', url);
 
     if (visitedIdentities.has(currentIdentity)) {
       log(`[crawlLinks] links rejected (duplicate) | url=${url} | reason=already_visited`);
@@ -213,6 +214,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
           url,
           count: links.length,
         });
+        console.log('[CRAWLER] links extracted', links.length);
 
         success = true;
         break;
@@ -305,6 +307,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         scan_id: scanId,
         url: normalized,
       });
+      console.log('[CRAWLER] queue push', normalized);
     }
 
     if (stopReason === 'crawl budget reached (max scan time reached)') {
