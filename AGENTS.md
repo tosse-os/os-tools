@@ -6,8 +6,8 @@ The project provides internal tools, scanning utilities, and services used by th
 
 Main technologies used in this repository:
 
-PHP / Laravel  
-Node.js utilities  
+PHP / Laravel
+Node.js utilities
 Composer for PHP dependencies
 
 
@@ -39,6 +39,75 @@ Internal OS tools used by the platform.
 
 node-scanner/
 Node.js based scanning utilities.
+
+
+Current implemented system components
+
+The SEO analysis platform already implements the following components.
+
+These features must NOT be reimplemented unless explicitly requested.
+
+### Scan Pipeline
+
+Controller
+→ Laravel Job
+→ Node Scanner
+→ JSON output in storage/scans/{scanId}
+→ Laravel persistence services
+→ Report generation
+
+### Core Models
+
+Project
+Analysis
+Report
+ReportResult
+Issue
+
+### Implemented Features
+
+- Project → Analysis → Reports hierarchy
+- Modular SEO result storage using report_results
+- Node-based crawler and scanner
+- Local SEO scanning
+- Multi URL scanning
+- Asynchronous queue processing
+- Scan progress monitoring
+- Queue monitoring interface
+
+### Issue Detection System
+
+The application already includes an SEO issue detection system.
+
+Implemented components:
+
+- issues database table
+- Issue model
+- IssueDetectionService
+- severity levels: critical, warning, info
+- issue persistence per report
+
+Detected issue types currently include:
+
+- missing_h1
+- duplicate_title
+- thin_content
+- missing_schema
+- missing_alt
+
+### Scanner Modules (Node)
+
+Implemented checks include:
+
+- heading check
+- alt attribute check
+- status code check
+
+Crawler functionality includes:
+
+- link discovery
+- internal crawl queue
+- multi-page scanning
 
 
 Development rules
