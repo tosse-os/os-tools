@@ -90,6 +90,7 @@ Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
 
 Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
 Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
+Route::post('/logs/clear', [LogController::class, 'clear'])->name('logs.clear');
 Route::view('/logs/live', 'logs.live')->name('logs.live');
 
 Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
