@@ -47,8 +47,15 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
-  const normalizedStartUrl = normalizeUrl(startUrl);
+  let normalizedStartUrl = normalizeUrl(startUrl);
   const scanId = options.scan_id ?? options.scanId ?? 'unknown';
+
+  if (!normalizedStartUrl) {
+    console.warn('[CRAWLER FIX] normalizeUrl returned null, using raw startUrl');
+    normalizedStartUrl = startUrl;
+  }
+
+  console.log('[CRAWLER DEBUG] normalized_start_url', normalizedStartUrl);
 
   log(
     `[crawlLinks] scan started | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`
@@ -57,20 +64,6 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     scan_id: scanId,
     startUrl: normalizedStartUrl || startUrl,
   });
-
-  if (!normalizedStartUrl) {
-    return includeLinkGraph
-      ? {
-          urls: [],
-          internal_links: [],
-          page_depth: {},
-          incoming_links_count: {},
-          outgoing_links_count: {},
-          pages: [],
-          orphan_pages: [],
-        }
-      : [];
-  }
 
   let startParsed;
   try {
