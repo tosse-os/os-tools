@@ -11,17 +11,25 @@
       <div>
         <h1 class="text-2xl font-semibold text-gray-900">Queue Monitor</h1>
         <p class="text-sm text-gray-500 mt-1">
-          Operational overview of queued and failed background jobs.
+          Operational overview of workers and scan queue status.
         </p>
       </div>
 
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
+        <span class="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+          Workers: {{ $workerSnapshot['active_workers'] ?? 0 }} ({{ $workerSnapshot['status'] ?? 'inactive' }})
+        </span>
+
         <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-          Queued: {{ isset($jobs) ? count($jobs) : 0 }}
+          Active scans: {{ $activeScans ?? 0 }}
+        </span>
+
+        <span class="inline-flex items-center rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-700">
+          Queued scans: {{ $queuedScans ?? 0 }}
         </span>
 
         <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
-          Failed: {{ isset($failedJobs) ? count($failedJobs) : 0 }}
+          Failed scans: {{ $failedScans ?? 0 }}
         </span>
       </div>
 

@@ -93,6 +93,7 @@ Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
 Route::view('/logs/live', 'logs.live')->name('logs.live');
 
 Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
+Route::get('/system/workers', [QueueController::class, 'workers']);
 
 /*
 |--------------------------------------------------------------------------

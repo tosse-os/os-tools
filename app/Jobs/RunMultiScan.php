@@ -25,6 +25,11 @@ class RunMultiScan implements ShouldQueue
 
     public function handle(): void
     {
+
+        if (!isset($this->options['max_parallel_pages'])) {
+            $this->options['max_parallel_pages'] = (int) env('SCAN_CONCURRENCY', config('seo.max_parallel_pages', 5));
+        }
+
         Log::info('RunMultiScan gestartet', [
             'scanId' => $this->scanId,
             'options' => $this->options
