@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 use Symfony\Component\Process\Process;
 
 class RunScan implements ShouldQueue
@@ -39,16 +40,12 @@ class RunScan implements ShouldQueue
             'checks' => $this->checks,
         ]);
 
-        $report = Report::where('id', $this->scanId)
-            ->orWhere('uuid', $this->scanId)
-            ->first();
+        $report = Report::where('id', $this->scanId)->first();
 
         $scan = null;
 
         if (!$report) {
-            $scan = Scan::where('id', $this->scanId)
-                ->orWhere('uuid', $this->scanId)
-                ->first();
+            $scan = Scan::where('id', $this->scanId)->first();
         }
 
         Log::debug('[SCAN TRACE] model_lookup', [
@@ -58,32 +55,26 @@ class RunScan implements ShouldQueue
         ]);
 
         if ($report) {
-            Log::debug('[SCAN TRACE] executing_crawler_report', [
+            Log::debug('[SCAN TRACE] executing_report_scan', [
                 'scan_id' => $this->scanId,
             ]);
             $this->runCrawlerReportScan($report, $reportPersistenceService);
-            Log::debug('[SCAN TRACE] job_completed', [
-                'scan_id' => $this->scanId,
-            ]);
-            return;
-        }
-
-        if ($scan) {
+        } elseif ($scan) {
             Log::debug('[SCAN TRACE] executing_multi_scan', [
                 'scan_id' => $this->scanId,
             ]);
             $this->runMultiScan($scan);
-            Log::debug('[SCAN TRACE] job_completed', [
+        } else {
+            Log::critical('[SCAN TRACE] lookup_failed', [
                 'scan_id' => $this->scanId,
             ]);
-            return;
+
+            throw new RuntimeException('RunScan could not find Report or Scan for ID: '.$this->scanId);
         }
 
-        Log::critical('[SCAN TRACE] lookup_failed', [
+        Log::debug('[SCAN TRACE] job_completed', [
             'scan_id' => $this->scanId,
         ]);
-
-        throw new \RuntimeException('RunScan could not find Report or Scan for ID: '.$this->scanId);
     }
 
     private function runCrawlerReportScan(Report $report, ReportPersistenceService $reportPersistenceService): void
