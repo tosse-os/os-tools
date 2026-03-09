@@ -39,20 +39,51 @@ class RunScan implements ShouldQueue
             'checks' => $this->checks,
         ]);
 
-        $report = Report::find($this->scanId);
-        $scan = $report ? null : Scan::find($this->scanId);
+        $report = Report::where('id', $this->scanId)
+            ->orWhere('uuid', $this->scanId)
+            ->first();
+
+        $scan = null;
+
+        if (!$report) {
+            $scan = Scan::where('id', $this->scanId)
+                ->orWhere('uuid', $this->scanId)
+                ->first();
+        }
+
+        Log::debug('[SCAN TRACE] model_lookup', [
+            'scan_id' => $this->scanId,
+            'report_found' => (bool) $report,
+            'scan_found' => (bool) $scan,
+        ]);
 
         if ($report) {
+            Log::debug('[SCAN TRACE] executing_crawler_report', [
+                'scan_id' => $this->scanId,
+            ]);
             $this->runCrawlerReportScan($report, $reportPersistenceService);
+            Log::debug('[SCAN TRACE] job_completed', [
+                'scan_id' => $this->scanId,
+            ]);
             return;
         }
 
         if ($scan) {
+            Log::debug('[SCAN TRACE] executing_multi_scan', [
+                'scan_id' => $this->scanId,
+            ]);
             $this->runMultiScan($scan);
+            Log::debug('[SCAN TRACE] job_completed', [
+                'scan_id' => $this->scanId,
+            ]);
             return;
         }
 
-        Log::error('RunScan: Weder Report noch Scan gefunden', ['scan_id' => $this->scanId]);
+        Log::critical('[SCAN TRACE] lookup_failed', [
+            'scan_id' => $this->scanId,
+        ]);
+
+        throw new \RuntimeException('RunScan could not find Report or Scan for ID: '.$this->scanId);
     }
 
     private function runCrawlerReportScan(Report $report, ReportPersistenceService $reportPersistenceService): void
