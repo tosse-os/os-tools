@@ -279,7 +279,13 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         continue;
       }
 
-      if (visitedUrls.size + queue.length >= maxPages) {
+      console.log('[CRAWLER DEBUG] crawl_budget_check', {
+        visited: visitedUrls.size,
+        queue: queue.length,
+        maxPages,
+      });
+
+      if (visitedUrls.size >= maxPages) {
         log(`[crawlLinks] links rejected | reason=max_pages_budget | link=${normalized}`);
         console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'max_pages_budget', url: normalized });
         continue;
@@ -302,6 +308,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
       queue.push({ url: normalized, depth: nextDepth });
       queuedIdentities.add(identity);
+      console.log('[CRAWLER DEBUG] queue_size_after_push', queue.length);
       log(`[crawlLinks] links accepted into crawl queue | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
       console.log('[SCAN TRACE] crawl_queue_push', {
         scan_id: scanId,
