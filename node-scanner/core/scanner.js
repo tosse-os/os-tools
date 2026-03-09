@@ -1,8 +1,21 @@
 const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
 const statusCheck = require('../checks/statusCheck');
 const crawlLinks = require('../crawl/crawlLinks');
+
+const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
+
+function log(message) {
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
+  } catch {
+    // noop
+  }
+}
 
 let options;
 try {
@@ -28,11 +41,9 @@ try {
 
     if (options.checks.includes('status')) {
       result.statusCheck = await statusCheck(page, options.url);
-      require('fs').writeFileSync('./node-scanner/textstatus.txt', JSON.stringify(result, null, 2));
     }
     if (options.checks.includes('alt')) {
       result.altCheck = await altCheck(page);
-      require('fs').writeFileSync('./node-scanner/textalt.txt', JSON.stringify(result, null, 2));
     }
     if (options.checks.includes('heading')) {
       result.headingCheck = await headingCheck(page);
@@ -46,14 +57,22 @@ try {
       max_retries: options.max_retries,
       retry_delay: options.retry_delay,
       include_link_graph: true,
+      logger: (message) => log(`[scanner] ${message}`),
     });
 
+    const httpStatusCodes = {};
+    if (result.statusCheck && result.statusCheck.status !== undefined) {
+      httpStatusCodes[options.url] = result.statusCheck.status;
+    }
+
+    result.pages_crawled = Array.isArray(linkGraph.urls) ? linkGraph.urls.length : 0;
     result.internal_links = linkGraph.internal_links;
     result.page_depth = linkGraph.page_depth;
     result.incoming_links_count = linkGraph.incoming_links_count;
     result.outgoing_links_count = linkGraph.outgoing_links_count;
     result.orphan_pages = linkGraph.orphan_pages;
     result.link_graph_pages = linkGraph.pages;
+    result.http_status_codes = httpStatusCodes;
 
     results.push(result);
   } catch (e) {
@@ -63,5 +82,4 @@ try {
   await browser.close();
 
   console.log(JSON.stringify(results));
-
 })();

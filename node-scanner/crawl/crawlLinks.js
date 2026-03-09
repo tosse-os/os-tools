@@ -1,6 +1,10 @@
 const { URL } = require('url');
 const { normalizeUrl } = require('../utils/urlUtils');
 
+function createLogger(logger) {
+  return typeof logger === 'function' ? logger : () => {};
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -49,6 +53,7 @@ function shouldBlockLoopByPathPattern(urlString, loopState, limits) {
 }
 
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
+  const log = createLogger(options.logger);
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 10);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
   const maxScanTimeMs = toPositiveMs(options.max_scan_time ?? options.maxScanTime, 300000);
@@ -66,6 +71,8 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   };
 
   const normalizedStartUrl = normalizeUrl(startUrl);
+  log(`[crawlLinks] scan start | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth}`);
+
   if (!normalizedStartUrl) {
     return includeLinkGraph ? {
       urls: [],
@@ -152,11 +159,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     const next = dequeueNext();
     if (!next) {
+      log(`[crawlLinks] queue empty | total_pages_crawled=${visitedUrls.size}`);
       break;
     }
 
     const { url, depth } = next;
     queued.delete(url);
+    const queueLengthAfterDequeue = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
+    log(`[crawlLinks] dequeue | url=${url} | depth=${depth} | queue_size=${queueLengthAfterDequeue}`);
 
     if (visitedUrls.has(url)) {
       continue;
@@ -224,9 +234,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       }
 
       if (parsed.origin !== origin) {
+        log(`[crawlLinks] url skipped (external) | source=${url} | candidate=${absolute}`);
         continue;
       }
 
+      log(`[crawlLinks] url discovered | source=${url} | candidate=${absolute} | depth=${depth + 1}`);
       discoveredUrls.add(absolute);
       addInternalEdge(url, absolute);
 
@@ -277,7 +289,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
             depthByUrl.set(absolute, nextDepth);
           }
           added += 1;
+          const queueLengthAfterAdd = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
+          log(`[crawlLinks] url added to crawl queue | url=${absolute} | depth=${nextDepth} | queue_size=${queueLengthAfterAdd}`);
         }
+      } else {
+        log(`[crawlLinks] url skipped (duplicate) | url=${absolute} | already_visited=${visitedUrls.has(absolute)} | already_queued=${queued.has(absolute)}`);
       }
     }
 
@@ -288,7 +304,10 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   if (stopReason) {
     console.log(`[crawlLinks] ${stopReason}`);
+    log(`[crawlLinks] stop reason | reason=${stopReason}`);
   }
+
+  log(`[crawlLinks] total pages crawled | total_pages_crawled=${visitedUrls.size} | total_discovered=${discoveredUrls.size}`);
 
   const crawledUrls = Array.from(visitedUrls).slice(0, maxPages);
 
