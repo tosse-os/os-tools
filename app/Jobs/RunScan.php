@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Report;
 use App\Models\Scan;
+use App\Services\IssueDetectionService;
 use App\Services\ReportPersistenceService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -58,7 +59,7 @@ class RunScan implements ShouldQueue
             Log::debug('[SCAN TRACE] executing_multi_scan', [
                 'scan_id' => $this->scanId,
             ]);
-            $this->runMultiScan($scan);
+            $this->runMultiScan($scan, $reportPersistenceService);
         } else {
             Log::critical('[SCAN TRACE] lookup_failed', [
                 'scan_id' => $this->scanId,
@@ -190,7 +191,7 @@ class RunScan implements ShouldQueue
         $reportPersistenceService->syncFromStorage($report->fresh());
     }
 
-    private function runMultiScan(Scan $scan): void
+    private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
     {
         Log::info('[SCAN] Job gestartet', [
             'scan_id' => $scan->id,
@@ -273,6 +274,18 @@ class RunScan implements ShouldQueue
             $scan->update(['status' => 'failed']);
             return;
         }
+
+        $report = Report::create([
+            'id' => $scan->id,
+            'url' => $scan->url,
+            'type' => 'crawler',
+            'status' => 'processing',
+        ]);
+
+        $reportPersistenceService->syncFromStorage($report);
+
+        $report->load('results');
+        app(IssueDetectionService::class)->detectAndStoreForReport($report);
 
         $scan->update(['status' => 'done']);
     }
