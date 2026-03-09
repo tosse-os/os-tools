@@ -79,11 +79,13 @@ class RunScan implements ShouldQueue
             'max_scan_time' => config('seo.max_scan_time', 300),
         ];
 
-        $process = new Process([
-            'node',
-            base_path('node-scanner/core/scanner.js'),
-            json_encode($options),
-        ]);
+        $command = sprintf(
+            'node %s %s',
+            escapeshellarg(base_path('node-scanner/core/scanner.js')),
+            escapeshellarg(json_encode($options, JSON_UNESCAPED_SLASHES))
+        );
+
+        $process = Process::fromShellCommandline($command, base_path());
 
         $process->setTimeout(null);
         Log::debug('[SCAN TRACE] node_process_start', [
@@ -98,10 +100,18 @@ class RunScan implements ShouldQueue
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         try {
             $process->run(function (string $type, string $buffer) use ($report): void {
-                Log::debug('[NODE OUTPUT]', [
+                if ($type === Process::ERR) {
+                    Log::error('[NODE STDERR]', [
+                        'scan_id' => $report->id,
+                        'output' => trim($buffer),
+                    ]);
+
+                    return;
+                }
+
+                Log::debug('[NODE STDOUT]', [
                     'scan_id' => $report->id,
-                    'type' => $type,
-                    'output' => $buffer,
+                    'output' => trim($buffer),
                 ]);
             });
         } catch (\Throwable $e) {
@@ -149,9 +159,14 @@ class RunScan implements ShouldQueue
         $directory = "scans/{$report->id}";
         Storage::makeDirectory($directory);
         Storage::put("{$directory}/0.json", json_encode($firstResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $pagesCrawled = (int) ($firstResult['pages_crawled'] ?? 1);
+        if ($pagesCrawled < 1) {
+            $pagesCrawled = 1;
+        }
+
         Storage::put("{$directory}/progress.json", json_encode([
-            'current' => 1,
-            'total' => 1,
+            'current' => $pagesCrawled,
+            'total' => $pagesCrawled,
             'status' => 'done',
         ]));
 
@@ -180,12 +195,14 @@ class RunScan implements ShouldQueue
             'max_scan_time' => config('seo.max_scan_time', 300),
         ];
 
-        $process = new Process([
-            'node',
-            base_path('node-scanner/core/multiScanner.js'),
-            json_encode($options),
-            $this->scanId,
-        ]);
+        $command = sprintf(
+            'node %s %s %s',
+            escapeshellarg(base_path('node-scanner/core/multiScanner.js')),
+            escapeshellarg(json_encode($options, JSON_UNESCAPED_SLASHES)),
+            escapeshellarg($this->scanId)
+        );
+
+        $process = Process::fromShellCommandline($command, base_path());
 
         $process->setTimeout(null);
         Log::debug('[SCAN TRACE] node_process_start', [
@@ -200,10 +217,18 @@ class RunScan implements ShouldQueue
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         try {
             $process->run(function (string $type, string $buffer) use ($scan): void {
-                Log::debug('[NODE OUTPUT]', [
+                if ($type === Process::ERR) {
+                    Log::error('[NODE STDERR]', [
+                        'scan_id' => $scan->id,
+                        'output' => trim($buffer),
+                    ]);
+
+                    return;
+                }
+
+                Log::debug('[NODE STDOUT]', [
                     'scan_id' => $scan->id,
-                    'type' => $type,
-                    'output' => $buffer,
+                    'output' => trim($buffer),
                 ]);
             });
         } catch (\Throwable $e) {
