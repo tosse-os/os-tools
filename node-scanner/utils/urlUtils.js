@@ -1,25 +1,75 @@
 const { URL } = require('url');
 
+const TRACKING_QUERY_PARAM_PATTERNS = [
+  /^utm_/i,
+  /^fbclid$/i,
+  /^gclid$/i,
+  /^msclkid$/i,
+  /^mc_eid$/i,
+  /^mc_cid$/i,
+  /^igshid$/i,
+  /^ref$/i,
+  /^source$/i,
+];
+
+function isTrackingParam(key) {
+  return TRACKING_QUERY_PARAM_PATTERNS.some((pattern) => pattern.test(key));
+}
+
 function normalizeUrl(raw, base = '') {
   try {
     const url = new URL(raw, base);
+
     url.hash = '';
+
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (isTrackingParam(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+
+    const orderedEntries = Array.from(url.searchParams.entries()).sort(([a], [b]) => a.localeCompare(b));
     url.search = '';
-    return decodeURIComponent(url.href).toLowerCase().replace(/\/+$/, '');
+    for (const [key, value] of orderedEntries) {
+      url.searchParams.append(key, value);
+    }
+
+    if (url.pathname.length > 1) {
+      url.pathname = url.pathname.replace(/\/+$/g, '') || '/';
+    }
+
+    if ((url.protocol === 'http:' && url.port === '80') || (url.protocol === 'https:' && url.port === '443')) {
+      url.port = '';
+    }
+
+    return url.toString();
   } catch {
     return null;
   }
 }
 
 function collectUniqueUrls(baseUrl, hrefs) {
-  const seen = new Map();
+  const seen = new Set();
+  const uniqueUrls = [];
   const origin = new URL(baseUrl).origin;
 
-  const add = (original) => {
-    const normalized = normalizeUrl(original, baseUrl);
-    if (normalized && normalized.startsWith(origin) && !seen.has(normalized)) {
-      seen.set(normalized, normalizeUrl(original, baseUrl)); // könnte auch original sein
+  const add = (candidate) => {
+    const normalized = normalizeUrl(candidate, baseUrl);
+
+    if (!normalized) {
+      return;
     }
+
+    if (!normalized.startsWith(origin)) {
+      return;
+    }
+
+    if (seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    uniqueUrls.push(normalized);
   };
 
   add(baseUrl);
@@ -28,7 +78,7 @@ function collectUniqueUrls(baseUrl, hrefs) {
     add(href);
   }
 
-  return Array.from(seen.values()); // gibt eindeutige Normalformen zurück
+  return uniqueUrls;
 }
 
 module.exports = {
