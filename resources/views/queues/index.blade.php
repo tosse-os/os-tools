@@ -15,13 +15,21 @@
         </p>
       </div>
 
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2">
+        <span class="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700">
+          Active workers: {{ $activeWorkers ?? 0 }}
+        </span>
+
         <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-          Queued: {{ isset($jobs) ? count($jobs) : 0 }}
+          Active scans: {{ $activeScans ?? 0 }}
+        </span>
+
+        <span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+          Queued scans: {{ $queuedScans ?? 0 }}
         </span>
 
         <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
-          Failed: {{ isset($failedJobs) ? count($failedJobs) : 0 }}
+          Failed scans: {{ $failedScans ?? 0 }}
         </span>
       </div>
 
