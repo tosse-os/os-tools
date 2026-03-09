@@ -40,13 +40,8 @@ class RunScan implements ShouldQueue
             'checks' => $this->checks,
         ]);
 
-        $report = Report::where('id', $this->scanId)->first();
-
-        $scan = null;
-
-        if (!$report) {
-            $scan = Scan::where('id', $this->scanId)->first();
-        }
+        $report = Report::find($this->scanId);
+        $scan = $report ? null : Scan::find($this->scanId);
 
         Log::debug('[SCAN TRACE] model_lookup', [
             'scan_id' => $this->scanId,
