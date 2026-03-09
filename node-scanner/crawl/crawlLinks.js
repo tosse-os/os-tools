@@ -6,7 +6,7 @@ function createLogger(logger) {
 }
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toPositiveInt(value, fallback) {
@@ -19,37 +19,14 @@ function toPositiveMs(value, fallbackMs) {
   return Number.isFinite(num) && num > 0 ? num : fallbackMs;
 }
 
-function toPatternPath(pathname) {
-  return pathname
-    .replace(/\b\d{4}\b/g, ':year')
-    .replace(/\b\d{1,2}\b/g, ':num')
-    .replace(/\b\d+\b/g, ':num');
-}
-
-function shouldBlockLoopByPathPattern(urlString, loopState, limits) {
-  let parsed;
-
+function getUrlIdentity(urlString) {
   try {
-    parsed = new URL(urlString);
+    const parsed = new URL(urlString);
+    const identity = `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}`;
+    return identity.toLowerCase();
   } catch {
-    return false;
+    return null;
   }
-
-  const pathname = parsed.pathname || '/';
-  const signature = toPatternPath(pathname);
-
-  if (!loopState.has(signature)) {
-    loopState.set(signature, new Set([pathname]));
-    return false;
-  }
-
-  const variants = loopState.get(signature);
-
-  if (!variants.has(pathname)) {
-    variants.add(pathname);
-  }
-
-  return variants.size > limits.maxPatternVariants;
 }
 
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
@@ -64,53 +41,54 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const pageTimeoutMs = pageTimeoutSeconds * 1000;
   const retryDelayMs = retryDelaySeconds * 1000;
-  const maxQueueSize = Math.max(maxPages * 4, 100);
-  const maxLinksPerPage = Math.max(Math.min(maxPages, 100), 20);
-  const loopLimits = {
-    maxPatternVariants: Math.max(Math.min(maxPages, 25), 8),
-  };
 
   const normalizedStartUrl = normalizeUrl(startUrl);
-  log(`[crawlLinks] scan start | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth}`);
+
+  log(`[crawlLinks] scan start | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`);
 
   if (!normalizedStartUrl) {
-    return includeLinkGraph ? {
-      urls: [],
-      internal_links: [],
-      page_depth: {},
-      incoming_links_count: {},
-      outgoing_links_count: {},
-      pages: [],
-      orphan_pages: [],
-    } : [];
+    return includeLinkGraph
+      ? {
+          urls: [],
+          internal_links: [],
+          page_depth: {},
+          incoming_links_count: {},
+          outgoing_links_count: {},
+          pages: [],
+          orphan_pages: [],
+        }
+      : [];
   }
-
-  const visitedUrls = new Set();
-  const discoveredUrls = new Set([normalizedStartUrl]);
-  const queued = new Set([normalizedStartUrl]);
-  const queueByDepth = Array.from({ length: maxDepth + 1 }, (_, depth) => depth === 0 ? [normalizedStartUrl] : []);
-  const depthByUrl = new Map([[normalizedStartUrl, 0]]);
-  const crawlStartedAt = Date.now();
-  const loopPatternState = new Map();
-  const outgoingLinks = new Map();
-  const incomingCounts = new Map();
-
-  let stopReason = null;
 
   let origin;
   try {
     origin = new URL(normalizedStartUrl).origin;
   } catch {
-    return includeLinkGraph ? {
-      urls: [],
-      internal_links: [],
-      page_depth: {},
-      incoming_links_count: {},
-      outgoing_links_count: {},
-      pages: [],
-      orphan_pages: [],
-    } : [];
+    return includeLinkGraph
+      ? {
+          urls: [],
+          internal_links: [],
+          page_depth: {},
+          incoming_links_count: {},
+          outgoing_links_count: {},
+          pages: [],
+          orphan_pages: [],
+        }
+      : [];
   }
+
+  const visitedUrls = new Set();
+  const visitedIdentities = new Set();
+  const queuedIdentities = new Set();
+  const discoveredUrls = new Set([normalizedStartUrl]);
+  const depthByUrl = new Map([[normalizedStartUrl, 0]]);
+  const queue = [{ url: normalizedStartUrl, depth: 0 }];
+
+  const outgoingLinks = new Map();
+  const incomingCounts = new Map();
+
+  const crawlStartedAt = Date.now();
+  let stopReason = null;
 
   const ensureOutgoingSet = (url) => {
     if (!outgoingLinks.has(url)) {
@@ -127,26 +105,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const addInternalEdge = (sourceUrl, targetUrl) => {
     const sourceTargets = ensureOutgoingSet(sourceUrl);
+
     if (!sourceTargets.has(targetUrl)) {
       sourceTargets.add(targetUrl);
       incomingCounts.set(targetUrl, (incomingCounts.get(targetUrl) || 0) + 1);
     }
+
     ensureIncomingCount(sourceUrl);
     ensureOutgoingSet(targetUrl);
   };
 
-  const dequeueNext = () => {
-    for (let depth = 0; depth < queueByDepth.length; depth += 1) {
-      if (queueByDepth[depth].length > 0) {
-        const url = queueByDepth[depth].shift();
-        return { url, depth };
-      }
-    }
-
-    return null;
-  };
-
-  while (true) {
+  while (queue.length > 0) {
     if (visitedUrls.size >= maxPages) {
       stopReason = 'crawl budget reached (max pages reached)';
       break;
@@ -157,24 +126,26 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       break;
     }
 
-    const next = dequeueNext();
+    const next = queue.shift();
+
     if (!next) {
-      log(`[crawlLinks] queue empty | total_pages_crawled=${visitedUrls.size}`);
       break;
     }
 
     const { url, depth } = next;
-    queued.delete(url);
-    const queueLengthAfterDequeue = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
-    log(`[crawlLinks] dequeue | url=${url} | depth=${depth} | queue_size=${queueLengthAfterDequeue}`);
+    const currentIdentity = getUrlIdentity(url) || url.toLowerCase();
+    queuedIdentities.delete(currentIdentity);
 
-    if (visitedUrls.has(url)) {
+    log(`[crawlLinks] url crawled | url=${url} | current_depth=${depth} | queue_size=${queue.length}`);
+
+    if (visitedIdentities.has(currentIdentity)) {
+      log(`[crawlLinks] links skipped | reason=already_visited | url=${url} | current_depth=${depth}`);
       continue;
     }
 
     if (depth > maxDepth) {
-      stopReason = 'crawl budget reached (max depth reached)';
-      break;
+      log(`[crawlLinks] links skipped | reason=max_depth_exceeded | url=${url} | current_depth=${depth}`);
+      continue;
     }
 
     let links = [];
@@ -184,9 +155,9 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       try {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
 
-        links = await page.$$eval('a[href]', (as) =>
-          as
-            .map((a) => a.getAttribute('href'))
+        links = await page.$$eval('a[href]', (anchors) =>
+          anchors
+            .map((anchor) => anchor.getAttribute('href'))
             .filter(Boolean)
             .map((href) => href.trim())
             .filter((href) => !href.startsWith('#'))
@@ -197,7 +168,8 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
         success = true;
         break;
-      } catch {
+      } catch (error) {
+        log(`[crawlLinks] links skipped | reason=page_load_failed | url=${url} | attempt=${attempt} | message=${error.message}`);
         if (attempt < maxRetries) {
           await sleep(retryDelayMs);
         }
@@ -209,92 +181,76 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
 
     visitedUrls.add(url);
+    visitedIdentities.add(currentIdentity);
     ensureIncomingCount(url);
     ensureOutgoingSet(url);
 
-    for (const link of links) {
+    const nextDepth = depth + 1;
+
+    for (const rawLink of links) {
       let absolute;
 
       try {
-        absolute = new URL(link, url).toString();
+        absolute = new URL(rawLink, url).toString();
       } catch {
+        log(`[crawlLinks] links skipped | reason=invalid_url | source=${url} | candidate=${rawLink} | current_depth=${depth}`);
         continue;
       }
 
-      absolute = normalizeUrl(absolute);
-      if (!absolute) {
+      const normalized = normalizeUrl(absolute);
+      if (!normalized) {
+        log(`[crawlLinks] links skipped | reason=normalization_failed | source=${url} | candidate=${absolute} | current_depth=${depth}`);
         continue;
       }
 
       let parsed;
       try {
-        parsed = new URL(absolute);
+        parsed = new URL(normalized);
       } catch {
+        log(`[crawlLinks] links skipped | reason=parse_failed | source=${url} | candidate=${normalized} | current_depth=${depth}`);
         continue;
       }
 
       if (parsed.origin !== origin) {
-        log(`[crawlLinks] url skipped (external) | source=${url} | candidate=${absolute}`);
+        log(`[crawlLinks] links skipped | reason=external_link | source=${url} | candidate=${normalized} | current_depth=${depth}`);
         continue;
       }
 
-      log(`[crawlLinks] url discovered | source=${url} | candidate=${absolute} | depth=${depth + 1}`);
-      discoveredUrls.add(absolute);
-      addInternalEdge(url, absolute);
+      log(`[crawlLinks] links discovered | source=${url} | link=${normalized} | discovered_depth=${nextDepth}`);
 
-      if (!depthByUrl.has(absolute) || depth + 1 < depthByUrl.get(absolute)) {
-        depthByUrl.set(absolute, depth + 1);
+      discoveredUrls.add(normalized);
+      addInternalEdge(url, normalized);
+
+      if (!depthByUrl.has(normalized) || nextDepth < depthByUrl.get(normalized)) {
+        depthByUrl.set(normalized, nextDepth);
       }
-    }
 
-    if (depth >= maxDepth || visitedUrls.size >= maxPages) {
-      continue;
-    }
-
-    const remainingPageBudget = maxPages - visitedUrls.size;
-    const globalQueueSize = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
-    const queueCapacityLeft = Math.max(maxQueueSize - globalQueueSize, 0);
-    const enqueueLimit = Math.min(maxLinksPerPage, remainingPageBudget, queueCapacityLeft);
-
-    if (enqueueLimit <= 0) {
-      if (queueCapacityLeft <= 0) {
-        stopReason = 'crawl queue limit reached';
+      if (nextDepth > maxDepth) {
+        log(`[crawlLinks] links skipped | reason=max_depth_reached | link=${normalized} | current_depth=${depth} | next_depth=${nextDepth}`);
+        continue;
       }
-      continue;
-    }
 
-    let added = 0;
+      if (visitedUrls.size + queue.length >= maxPages) {
+        log(`[crawlLinks] links skipped | reason=max_pages_budget | link=${normalized} | current_depth=${depth}`);
+        continue;
+      }
 
-    for (const absolute of outgoingLinks.get(url)) {
       if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
         stopReason = 'crawl budget reached (max scan time reached)';
+        log(`[crawlLinks] links skipped | reason=max_scan_time_reached | link=${normalized} | current_depth=${depth}`);
         break;
       }
 
-      if (added >= enqueueLimit) {
-        break;
-      }
+      const identity = getUrlIdentity(normalized) || normalized.toLowerCase();
 
-      if (shouldBlockLoopByPathPattern(absolute, loopPatternState, loopLimits)) {
+      if (visitedIdentities.has(identity) || queuedIdentities.has(identity)) {
+        log(`[crawlLinks] links skipped | reason=duplicate | link=${normalized} | duplicate_key=${identity}`);
         continue;
       }
 
-      if (!visitedUrls.has(absolute) && !queued.has(absolute)) {
-        const nextDepth = depth + 1;
-        if (nextDepth <= maxDepth) {
-          queueByDepth[nextDepth].push(absolute);
-          queued.add(absolute);
-          discoveredUrls.add(absolute);
-          if (!depthByUrl.has(absolute) || nextDepth < depthByUrl.get(absolute)) {
-            depthByUrl.set(absolute, nextDepth);
-          }
-          added += 1;
-          const queueLengthAfterAdd = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
-          log(`[crawlLinks] url added to crawl queue | url=${absolute} | depth=${nextDepth} | queue_size=${queueLengthAfterAdd}`);
-        }
-      } else {
-        log(`[crawlLinks] url skipped (duplicate) | url=${absolute} | already_visited=${visitedUrls.has(absolute)} | already_queued=${queued.has(absolute)}`);
-      }
+      queue.push({ url: normalized, depth: nextDepth });
+      queuedIdentities.add(identity);
+      log(`[crawlLinks] links queued | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
     }
 
     if (stopReason === 'crawl budget reached (max scan time reached)') {
@@ -302,12 +258,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
   }
 
-  if (stopReason) {
-    console.log(`[crawlLinks] ${stopReason}`);
-    log(`[crawlLinks] stop reason | reason=${stopReason}`);
+  if (!stopReason) {
+    if (queue.length === 0) {
+      stopReason = 'crawl queue exhausted';
+    } else if (visitedUrls.size >= maxPages) {
+      stopReason = 'crawl budget reached (max pages reached)';
+    } else if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
+      stopReason = 'crawl budget reached (max scan time reached)';
+    }
   }
 
-  log(`[crawlLinks] total pages crawled | total_pages_crawled=${visitedUrls.size} | total_discovered=${discoveredUrls.size}`);
+  log(`[crawlLinks] scan stop | reason=${stopReason || 'completed'} | pages_crawled=${visitedUrls.size} | urls_discovered=${discoveredUrls.size}`);
 
   const crawledUrls = Array.from(visitedUrls).slice(0, maxPages);
 
@@ -320,10 +281,10 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const incomingLinksCount = {};
   const outgoingLinksCount = {};
 
-  for (const url of crawlSetUrls) {
-    pageDepth[url] = depthByUrl.has(url) ? depthByUrl.get(url) : null;
-    incomingLinksCount[url] = incomingCounts.get(url) || 0;
-    outgoingLinksCount[url] = outgoingLinks.has(url) ? outgoingLinks.get(url).size : 0;
+  for (const discoveredUrl of crawlSetUrls) {
+    pageDepth[discoveredUrl] = depthByUrl.has(discoveredUrl) ? depthByUrl.get(discoveredUrl) : null;
+    incomingLinksCount[discoveredUrl] = incomingCounts.get(discoveredUrl) || 0;
+    outgoingLinksCount[discoveredUrl] = outgoingLinks.has(discoveredUrl) ? outgoingLinks.get(discoveredUrl).size : 0;
   }
 
   const internalLinks = [];
@@ -333,14 +294,16 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
   }
 
-  const pages = crawlSetUrls.map((url) => ({
-    url,
-    depth: pageDepth[url],
-    incoming_links: incomingLinksCount[url],
-    outgoing_links: outgoingLinksCount[url],
+  const pages = crawlSetUrls.map((discoveredUrl) => ({
+    url: discoveredUrl,
+    depth: pageDepth[discoveredUrl],
+    incoming_links: incomingLinksCount[discoveredUrl],
+    outgoing_links: outgoingLinksCount[discoveredUrl],
   }));
 
-  const orphanPages = crawlSetUrls.filter((url) => url !== normalizedStartUrl && (incomingLinksCount[url] || 0) === 0);
+  const orphanPages = crawlSetUrls.filter(
+    (discoveredUrl) => discoveredUrl !== normalizedStartUrl && (incomingLinksCount[discoveredUrl] || 0) === 0
+  );
 
   return {
     urls: crawledUrls,
