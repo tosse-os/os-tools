@@ -4,6 +4,7 @@ const headingCheck = require('../checks/headingCheck');
 const crawlLinks = require('../crawl/crawlLinks');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 
@@ -195,6 +196,69 @@ function writeProgress(resultDir, payload) {
   fs.writeFileSync(path.join(resultDir, 'progress.json'), JSON.stringify(payload));
 }
 
+function createFingerprint({ title = '', h1 = [], content = '', html = '' }) {
+  return {
+    title: String(title || ''),
+    h1: Array.isArray(h1) ? h1 : [],
+    content_length: String(content || '').length,
+    content_hash: crypto.createHash('sha1').update(String(html || ''), 'utf8').digest('hex')
+  };
+}
+
+function normalizeSchemaBlocks(schema) {
+  if (!Array.isArray(schema)) {
+    return '';
+  }
+
+  return schema
+    .map(item => String(item || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .sort()
+    .join('\n');
+}
+
+function getPreviousScanIdFromOptions(scanOptions) {
+  return scanOptions.previous_scan_id
+    || scanOptions.previousScanId
+    || scanOptions.previous_scan
+    || scanOptions.previousScan
+    || null;
+}
+
+function loadPreviousResults(scanOptions) {
+  const previousScanId = getPreviousScanIdFromOptions(scanOptions);
+
+  if (!previousScanId) {
+    return new Map();
+  }
+
+  const previousDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', String(previousScanId));
+
+  if (!fs.existsSync(previousDir)) {
+    log(`Kein vorheriger Scan gefunden: ${previousScanId}`);
+    return new Map();
+  }
+
+  const entries = fs.readdirSync(previousDir)
+    .filter(file => file.endsWith('.json') && file !== 'progress.json');
+
+  const resultMap = new Map();
+
+  entries.forEach((file) => {
+    try {
+      const payload = JSON.parse(fs.readFileSync(path.join(previousDir, file), 'utf8'));
+      if (payload && payload.url) {
+        resultMap.set(payload.url, payload);
+      }
+    } catch (err) {
+      log(`Vorheriges Ergebnis konnte nicht gelesen werden (${file}): ${err.message}`);
+    }
+  });
+
+  log(`Vorherige Ergebnisse geladen: ${resultMap.size} (scanId=${previousScanId})`);
+  return resultMap;
+}
+
 let options;
 
 try {
@@ -226,6 +290,7 @@ if (!fs.existsSync(resultDir)) {
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
   log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
+  const previousResultsByUrl = loadPreviousResults(options);
 
   const browser = await puppeteer.launch({ headless: true });
   const abortPath = path.resolve(__dirname, '..', '..', 'storage', 'app', `abort-${scanId}.flag`);
@@ -293,6 +358,14 @@ if (!fs.existsSync(resultDir)) {
     let success = false;
 
     try {
+      let currentExtraction = {
+        title: '',
+        h1: [],
+        content: '',
+        schema: [],
+        html: ''
+      };
+
       for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
         if (fs.existsSync(abortPath) || hasExceededMaxScanTime()) {
           break;
@@ -317,6 +390,13 @@ if (!fs.existsSync(resultDir)) {
 
           if (!renderMode) {
             const extracted = extractFromHtml(preFetched.html);
+            currentExtraction = {
+              title: extracted.title,
+              h1: extracted.h1,
+              content: extracted.content,
+              schema: extracted.schema,
+              html: preFetched.html
+            };
             result.title = extracted.title;
 
             if (options.checks.includes('alt')) {
@@ -353,6 +433,15 @@ if (!fs.existsSync(resultDir)) {
               return { h1, meta, schema, links, content };
             });
 
+            const renderedHtml = await page.content();
+            currentExtraction = {
+              title: result.title,
+              h1: renderedExtraction.h1,
+              content: renderedExtraction.content,
+              schema: renderedExtraction.schema,
+              html: renderedHtml
+            };
+
             if (options.checks.includes('alt')) {
               result.altCheck = await altCheck(page);
             }
@@ -364,6 +453,70 @@ if (!fs.existsSync(resultDir)) {
             log(
               `Render mode used for ${url} | h1=${renderedExtraction.h1.length} | meta=${renderedExtraction.meta.length} | schema=${renderedExtraction.schema.length} | links=${renderedExtraction.links.length} | contentLength=${renderedExtraction.content.length}`
             );
+          }
+
+          result.fingerprint = createFingerprint(currentExtraction);
+
+          const previousResult = previousResultsByUrl.get(url);
+          const previousFingerprint = previousResult && previousResult.fingerprint ? previousResult.fingerprint : null;
+
+          const titleChanged = !previousResult
+            ? true
+            : String(previousFingerprint?.title || '') !== String(currentExtraction.title || '');
+          const h1Changed = !previousResult
+            ? true
+            : JSON.stringify(previousFingerprint?.h1 || []) !== JSON.stringify(currentExtraction.h1 || []);
+          const contentChanged = !previousResult
+            ? true
+            : Number(previousFingerprint?.content_length || 0) !== String(currentExtraction.content || '').length
+              || String(previousFingerprint?.content_hash || '') !== String(result.fingerprint.content_hash || '');
+          const schemaChanged = !previousResult
+            ? true
+            : normalizeSchemaBlocks(previousResult.schema) !== normalizeSchemaBlocks(currentExtraction.schema);
+
+          result.changes = {
+            title_changed: titleChanged,
+            content_changed: contentChanged,
+            h1_changed: h1Changed,
+            schema_changed: schemaChanged
+          };
+
+          const isFingerprintIdentical = Boolean(previousFingerprint)
+            && String(previousFingerprint.title || '') === String(result.fingerprint.title || '')
+            && JSON.stringify(previousFingerprint.h1 || []) === JSON.stringify(result.fingerprint.h1 || [])
+            && Number(previousFingerprint.content_length || 0) === Number(result.fingerprint.content_length || 0)
+            && String(previousFingerprint.content_hash || '') === String(result.fingerprint.content_hash || '');
+
+          if (isFingerprintIdentical) {
+            if (options.checks.includes('alt') && previousResult.altCheck) {
+              result.altCheck = previousResult.altCheck;
+            }
+
+            if (options.checks.includes('heading') && previousResult.headingCheck) {
+              result.headingCheck = previousResult.headingCheck;
+            }
+
+            result.incremental = {
+              skipped_heavy_analysis: true,
+              reused_previous_scores: true
+            };
+
+            log(`Unverändert erkannt: ${url} | Heavy-Analyse übersprungen, Ergebnisse wiederverwendet`);
+          } else {
+            result.incremental = {
+              skipped_heavy_analysis: false,
+              reused_previous_scores: false
+            };
+
+            const detectedChanges = [];
+            if (titleChanged) detectedChanges.push('title changed');
+            if (h1Changed) detectedChanges.push('h1 changed');
+            if (contentChanged) detectedChanges.push('content changed');
+            if (schemaChanged) detectedChanges.push('schema changed');
+
+            if (detectedChanges.length > 0) {
+              log(`Änderungen erkannt bei ${url}: ${detectedChanges.join(', ')}`);
+            }
           }
 
           success = true;
