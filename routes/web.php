@@ -42,6 +42,7 @@ Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
 Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
 
 Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
+Route::get('/scans/{scan}/progress', [ScanController::class, 'progress'])->name('scans.progress');
 Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
 
 Route::post('/multiscan/abort', [ScanController::class, 'abort']);
