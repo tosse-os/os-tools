@@ -9,9 +9,44 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
 }
 
+function toPositiveMs(value, fallbackMs) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : fallbackMs;
+}
+
+function normalizeUrl(rawUrl) {
+  let parsed;
+
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  parsed.hash = '';
+
+  for (const key of Array.from(parsed.searchParams.keys())) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.startsWith('utm_') || lowerKey === 'gclid' || lowerKey === 'fbclid' || lowerKey === 'msclkid') {
+      parsed.searchParams.delete(key);
+    }
+  }
+
+  let normalizedPath = parsed.pathname;
+  if (normalizedPath.length > 1 && normalizedPath.endsWith('/')) {
+    normalizedPath = normalizedPath.slice(0, -1);
+  }
+
+  parsed.pathname = normalizedPath;
+  parsed.search = parsed.searchParams.toString() ? `?${parsed.searchParams.toString()}` : '';
+
+  return parsed.toString();
+}
+
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 10);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
+  const maxScanTimeMs = toPositiveMs(options.max_scan_time ?? options.maxScanTime, 60000);
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
@@ -19,23 +54,46 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const pageTimeoutMs = pageTimeoutSeconds * 1000;
   const retryDelayMs = retryDelaySeconds * 1000;
 
-  const visited = new Set();
-  const queue = [{ url: startUrl, depth: 0 }];
-  const queued = new Set([startUrl]);
+  const normalizedStartUrl = normalizeUrl(startUrl);
+  if (!normalizedStartUrl) {
+    return [];
+  }
+
+  const visitedUrls = new Set();
+  const queue = [{ url: normalizedStartUrl, depth: 0 }];
+  const queued = new Set([normalizedStartUrl]);
+  const crawlStartedAt = Date.now();
+
+  let stopReason = null;
 
   let origin;
   try {
-    origin = new URL(startUrl).origin;
+    origin = new URL(normalizedStartUrl).origin;
   } catch {
     return [];
   }
 
-  while (queue.length > 0 && visited.size < maxPages) {
+  while (queue.length > 0) {
+    if (visitedUrls.size >= maxPages) {
+      stopReason = 'max pages reached';
+      break;
+    }
+
+    if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
+      stopReason = 'crawl budget reached (max scan time reached)';
+      break;
+    }
+
     const { url, depth } = queue.shift();
     queued.delete(url);
 
-    if (visited.has(url)) {
+    if (visitedUrls.has(url)) {
       continue;
+    }
+
+    if (depth > maxDepth) {
+      stopReason = 'max depth reached';
+      break;
     }
 
     let links = [];
@@ -69,7 +127,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       continue;
     }
 
-    visited.add(url);
+    visitedUrls.add(url);
 
     if (depth >= maxDepth) {
       continue;
@@ -84,6 +142,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         continue;
       }
 
+      absolute = normalizeUrl(absolute);
+      if (!absolute) {
+        continue;
+      }
+
       try {
         const parsed = new URL(absolute);
         if (parsed.origin !== origin) {
@@ -93,12 +156,16 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         continue;
       }
 
-      if (!visited.has(absolute) && !queued.has(absolute) && queue.length + visited.size < maxPages) {
+      if (!visitedUrls.has(absolute) && !queued.has(absolute)) {
         queue.push({ url: absolute, depth: depth + 1 });
         queued.add(absolute);
       }
     }
   }
 
-  return Array.from(visited).slice(0, maxPages);
+  if (stopReason) {
+    console.log(`[crawlLinks] ${stopReason}`);
+  }
+
+  return Array.from(visitedUrls).slice(0, maxPages);
 };
