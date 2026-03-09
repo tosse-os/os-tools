@@ -26,6 +26,8 @@ try {
 }
 
 (async () => {
+  log(`[scanner] scan start | url=${options.url} | checks=${Array.isArray(options.checks) ? options.checks.join(',') : ''}`);
+
   const browser = await puppeteer.launch({ headless: 'new' });
   const page = await browser.newPage();
 
@@ -36,7 +38,7 @@ try {
 
     const result = {
       url: options.url,
-      title: await page.title()
+      title: await page.title(),
     };
 
     if (options.checks.includes('status')) {
@@ -75,8 +77,10 @@ try {
     result.http_status_codes = httpStatusCodes;
 
     results.push(result);
+    log(`[scanner] scan complete | url=${options.url} | pages_crawled=${result.pages_crawled}`);
   } catch (e) {
     results.push({ url: options.url, error: e.message });
+    log(`[scanner] scan failed | url=${options.url} | message=${e.message}`);
   }
 
   await browser.close();
