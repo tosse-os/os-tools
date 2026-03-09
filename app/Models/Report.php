@@ -37,6 +37,12 @@ class Report extends Model
     {
         return $this->hasMany(\App\Models\ReportResult::class, 'report_id');
     }
+
+    public function issues()
+    {
+        return $this->hasMany(Issue::class, 'report_id');
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);
