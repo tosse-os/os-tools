@@ -2,6 +2,7 @@ const puppeteer = require('puppeteer');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
 const statusCheck = require('../checks/statusCheck');
+const crawlLinks = require('../crawl/crawlLinks');
 
 let options;
 try {
@@ -36,7 +37,24 @@ try {
     if (options.checks.includes('heading')) {
       result.headingCheck = await headingCheck(page);
     }
-    //require('fs').writeFileSync('./node-scanner/final-data.txt', JSON.stringify(result, null, 2));
+
+    const linkGraph = await crawlLinks(page, options.url, {
+      max_pages: options.max_pages,
+      max_depth: options.max_depth,
+      max_scan_time: options.max_scan_time,
+      page_timeout: options.page_timeout,
+      max_retries: options.max_retries,
+      retry_delay: options.retry_delay,
+      include_link_graph: true,
+    });
+
+    result.internal_links = linkGraph.internal_links;
+    result.page_depth = linkGraph.page_depth;
+    result.incoming_links_count = linkGraph.incoming_links_count;
+    result.outgoing_links_count = linkGraph.outgoing_links_count;
+    result.orphan_pages = linkGraph.orphan_pages;
+    result.link_graph_pages = linkGraph.pages;
+
     results.push(result);
   } catch (e) {
     results.push({ url: options.url, error: e.message });
@@ -44,12 +62,6 @@ try {
 
   await browser.close();
 
-// Alte Ausgabe – NICHT GEEIGNET für Laravel-Job
-// for (const row of results) {
-//   console.log(JSON.stringify(row));
-// }
-
-// Neue Ausgabe – genau ein JSON-Array
-console.log(JSON.stringify(results));
+  console.log(JSON.stringify(results));
 
 })();

@@ -55,6 +55,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
+  const includeLinkGraph = options.include_link_graph === true || options.includeLinkGraph === true;
 
   const pageTimeoutMs = pageTimeoutSeconds * 1000;
   const retryDelayMs = retryDelaySeconds * 1000;
@@ -66,14 +67,26 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const normalizedStartUrl = normalizeUrl(startUrl);
   if (!normalizedStartUrl) {
-    return [];
+    return includeLinkGraph ? {
+      urls: [],
+      internal_links: [],
+      page_depth: {},
+      incoming_links_count: {},
+      outgoing_links_count: {},
+      pages: [],
+      orphan_pages: [],
+    } : [];
   }
 
   const visitedUrls = new Set();
+  const discoveredUrls = new Set([normalizedStartUrl]);
   const queued = new Set([normalizedStartUrl]);
   const queueByDepth = Array.from({ length: maxDepth + 1 }, (_, depth) => depth === 0 ? [normalizedStartUrl] : []);
+  const depthByUrl = new Map([[normalizedStartUrl, 0]]);
   const crawlStartedAt = Date.now();
   const loopPatternState = new Map();
+  const outgoingLinks = new Map();
+  const incomingCounts = new Map();
 
   let stopReason = null;
 
@@ -81,8 +94,39 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   try {
     origin = new URL(normalizedStartUrl).origin;
   } catch {
-    return [];
+    return includeLinkGraph ? {
+      urls: [],
+      internal_links: [],
+      page_depth: {},
+      incoming_links_count: {},
+      outgoing_links_count: {},
+      pages: [],
+      orphan_pages: [],
+    } : [];
   }
+
+  const ensureOutgoingSet = (url) => {
+    if (!outgoingLinks.has(url)) {
+      outgoingLinks.set(url, new Set());
+    }
+    return outgoingLinks.get(url);
+  };
+
+  const ensureIncomingCount = (url) => {
+    if (!incomingCounts.has(url)) {
+      incomingCounts.set(url, 0);
+    }
+  };
+
+  const addInternalEdge = (sourceUrl, targetUrl) => {
+    const sourceTargets = ensureOutgoingSet(sourceUrl);
+    if (!sourceTargets.has(targetUrl)) {
+      sourceTargets.add(targetUrl);
+      incomingCounts.set(targetUrl, (incomingCounts.get(targetUrl) || 0) + 1);
+    }
+    ensureIncomingCount(sourceUrl);
+    ensureOutgoingSet(targetUrl);
+  };
 
   const dequeueNext = () => {
     for (let depth = 0; depth < queueByDepth.length; depth += 1) {
@@ -155,35 +199,10 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
 
     visitedUrls.add(url);
-
-    if (depth >= maxDepth || visitedUrls.size >= maxPages) {
-      continue;
-    }
-
-    const remainingPageBudget = maxPages - visitedUrls.size;
-    const globalQueueSize = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
-    const queueCapacityLeft = Math.max(maxQueueSize - globalQueueSize, 0);
-    const enqueueLimit = Math.min(maxLinksPerPage, remainingPageBudget, queueCapacityLeft);
-
-    if (enqueueLimit <= 0) {
-      if (queueCapacityLeft <= 0) {
-        stopReason = 'crawl queue limit reached';
-      }
-      continue;
-    }
-
-    let added = 0;
+    ensureIncomingCount(url);
+    ensureOutgoingSet(url);
 
     for (const link of links) {
-      if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
-        stopReason = 'crawl budget reached (max scan time reached)';
-        break;
-      }
-
-      if (added >= enqueueLimit) {
-        break;
-      }
-
       let absolute;
 
       try {
@@ -208,6 +227,42 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         continue;
       }
 
+      discoveredUrls.add(absolute);
+      addInternalEdge(url, absolute);
+
+      if (!depthByUrl.has(absolute) || depth + 1 < depthByUrl.get(absolute)) {
+        depthByUrl.set(absolute, depth + 1);
+      }
+    }
+
+    if (depth >= maxDepth || visitedUrls.size >= maxPages) {
+      continue;
+    }
+
+    const remainingPageBudget = maxPages - visitedUrls.size;
+    const globalQueueSize = queueByDepth.reduce((sum, bucket) => sum + bucket.length, 0);
+    const queueCapacityLeft = Math.max(maxQueueSize - globalQueueSize, 0);
+    const enqueueLimit = Math.min(maxLinksPerPage, remainingPageBudget, queueCapacityLeft);
+
+    if (enqueueLimit <= 0) {
+      if (queueCapacityLeft <= 0) {
+        stopReason = 'crawl queue limit reached';
+      }
+      continue;
+    }
+
+    let added = 0;
+
+    for (const absolute of outgoingLinks.get(url)) {
+      if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
+        stopReason = 'crawl budget reached (max scan time reached)';
+        break;
+      }
+
+      if (added >= enqueueLimit) {
+        break;
+      }
+
       if (shouldBlockLoopByPathPattern(absolute, loopPatternState, loopLimits)) {
         continue;
       }
@@ -217,6 +272,10 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         if (nextDepth <= maxDepth) {
           queueByDepth[nextDepth].push(absolute);
           queued.add(absolute);
+          discoveredUrls.add(absolute);
+          if (!depthByUrl.has(absolute) || nextDepth < depthByUrl.get(absolute)) {
+            depthByUrl.set(absolute, nextDepth);
+          }
           added += 1;
         }
       }
@@ -231,5 +290,46 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     console.log(`[crawlLinks] ${stopReason}`);
   }
 
-  return Array.from(visitedUrls).slice(0, maxPages);
+  const crawledUrls = Array.from(visitedUrls).slice(0, maxPages);
+
+  if (!includeLinkGraph) {
+    return crawledUrls;
+  }
+
+  const crawlSetUrls = Array.from(discoveredUrls);
+  const pageDepth = {};
+  const incomingLinksCount = {};
+  const outgoingLinksCount = {};
+
+  for (const url of crawlSetUrls) {
+    pageDepth[url] = depthByUrl.has(url) ? depthByUrl.get(url) : null;
+    incomingLinksCount[url] = incomingCounts.get(url) || 0;
+    outgoingLinksCount[url] = outgoingLinks.has(url) ? outgoingLinks.get(url).size : 0;
+  }
+
+  const internalLinks = [];
+  for (const [sourceUrl, targets] of outgoingLinks.entries()) {
+    for (const targetUrl of targets) {
+      internalLinks.push({ source_url: sourceUrl, target_url: targetUrl });
+    }
+  }
+
+  const pages = crawlSetUrls.map((url) => ({
+    url,
+    depth: pageDepth[url],
+    incoming_links: incomingLinksCount[url],
+    outgoing_links: outgoingLinksCount[url],
+  }));
+
+  const orphanPages = crawlSetUrls.filter((url) => url !== normalizedStartUrl && (incomingLinksCount[url] || 0) === 0);
+
+  return {
+    urls: crawledUrls,
+    internal_links: internalLinks,
+    page_depth: pageDepth,
+    incoming_links_count: incomingLinksCount,
+    outgoing_links_count: outgoingLinksCount,
+    pages,
+    orphan_pages: orphanPages,
+  };
 };
