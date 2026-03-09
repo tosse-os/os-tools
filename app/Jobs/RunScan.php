@@ -29,6 +29,11 @@ class RunScan implements ShouldQueue
 
     public function handle(ReportPersistenceService $reportPersistenceService): void
     {
+        Log::debug('[SCAN TRACE] job_started', [
+            'scan_id' => $this->scanId,
+            'checks' => $this->checks,
+        ]);
+
         Log::info('RunScan gestartet', [
             'scan_id' => $this->scanId,
             'checks' => $this->checks,
@@ -63,6 +68,7 @@ class RunScan implements ShouldQueue
         ]);
 
         $options = [
+            'scan_id' => $report->id,
             'url' => $report->url,
             'checks' => array_values(array_unique(array_merge($this->checks, ['status']))),
             'max_pages' => config('seo.max_pages', 20),
@@ -80,9 +86,21 @@ class RunScan implements ShouldQueue
         ]);
 
         $process->setTimeout(null);
+        Log::debug('[SCAN TRACE] node_process_start', [
+            'scan_id' => $report->id,
+            'target' => 'scanner.js',
+        ]);
         Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $report->id]);
+        Log::debug('[SCAN TRACE] node_command', [
+            'scan_id' => $report->id,
+            'command' => $process->getCommandLine(),
+        ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         $process->run();
+        Log::debug('[SCAN TRACE] node_process_finished', [
+            'scan_id' => $report->id,
+            'successful' => $process->isSuccessful(),
+        ]);
         Log::info('[SCAN] Node Scanner finished', ['scan_id' => $report->id]);
 
         if (!$process->isSuccessful()) {
@@ -133,6 +151,7 @@ class RunScan implements ShouldQueue
         $scan->update(['status' => 'running']);
 
         $options = [
+            'scan_id' => $scan->id,
             'url' => $scan->url,
             'checks' => $this->checks,
             'max_pages' => config('seo.max_pages', 20),
@@ -152,9 +171,21 @@ class RunScan implements ShouldQueue
         ]);
 
         $process->setTimeout(null);
+        Log::debug('[SCAN TRACE] node_process_start', [
+            'scan_id' => $scan->id,
+            'target' => 'multiScanner.js',
+        ]);
         Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $scan->id]);
+        Log::debug('[SCAN TRACE] node_command', [
+            'scan_id' => $scan->id,
+            'command' => $process->getCommandLine(),
+        ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         $process->run();
+        Log::debug('[SCAN TRACE] node_process_finished', [
+            'scan_id' => $scan->id,
+            'successful' => $process->isSuccessful(),
+        ]);
         Log::info('[SCAN] Node Scanner finished', ['scan_id' => $scan->id]);
 
         if (!$process->isSuccessful()) {
