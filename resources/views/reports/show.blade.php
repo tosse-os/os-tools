@@ -97,6 +97,32 @@ $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
   </div>
 
   <div>
+    <h2 class="text-xl font-semibold mb-4">SEO Issues</h2>
+
+    <div class="space-y-2 text-sm text-gray-700">
+      <div><strong>Total:</strong> {{ $issuesSummary['issues_total'] ?? 0 }}</div>
+      <div><strong>Critical:</strong> {{ $issuesSummary['critical_count'] ?? 0 }}</div>
+      <div><strong>Warning:</strong> {{ $issuesSummary['warning_count'] ?? 0 }}</div>
+
+      @if(($issueTypeSummary['missing_h1'] ?? 0) > 0)
+      <div>Missing H1 on {{ $issueTypeSummary['missing_h1'] }} pages</div>
+      @endif
+
+      @if(($issueTypeSummary['thin_content'] ?? 0) > 0)
+      <div>Thin content on {{ $issueTypeSummary['thin_content'] }} pages</div>
+      @endif
+
+      @if(($issueTypeSummary['missing_alt'] ?? 0) > 0)
+      <div>Missing alt text on {{ $issueTypeSummary['missing_alt'] }} pages</div>
+      @endif
+
+      @if(empty($issueTypeSummary))
+      <div class="text-gray-600">No SEO issues detected.</div>
+      @endif
+    </div>
+  </div>
+
+  <div>
     <h2 class="text-xl font-semibold mb-4">Top SEO Issues</h2>
 
     <div class="space-y-3">

@@ -60,7 +60,23 @@ class ReportController extends Controller
       abort(403);
     }
 
-    $report->load(['results', 'analysis.project']);
+    $report->load(['results', 'issues', 'analysis.project']);
+
+
+    $issuesSummary = [
+      'issues_total' => $report->issues->count(),
+      'critical_count' => $report->issues->where('severity', 'critical')->count(),
+      'warning_count' => $report->issues->where('severity', 'warning')->count(),
+    ];
+
+    $report->setAttribute('issues_total', $issuesSummary['issues_total']);
+    $report->setAttribute('critical_count', $issuesSummary['critical_count']);
+    $report->setAttribute('warning_count', $issuesSummary['warning_count']);
+
+    $issueTypeSummary = $report->issues
+      ->groupBy('type')
+      ->map(fn($group) => $group->count())
+      ->all();
 
     $timelineQuery = Report::query()->orderBy('started_at');
 
@@ -189,6 +205,8 @@ class ReportController extends Controller
       'regression' => $regression,
       'moduleRegressions' => $moduleRegressions,
       'insights' => $insights,
+      'issuesSummary' => $issuesSummary,
+      'issueTypeSummary' => $issueTypeSummary,
     ]);
   }
 

@@ -9,6 +9,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Log;
+use App\Services\IssueDetectionService;
 
 class RunLocalSeo implements ShouldQueue
 {
@@ -118,5 +119,8 @@ class RunLocalSeo implements ShouldQueue
             'score' => $data['score'] ?? 0,
             'payload' => $data,
         ]);
+
+        $report->load('results');
+        app(IssueDetectionService::class)->detectAndStoreForReport($report);
     }
 }
