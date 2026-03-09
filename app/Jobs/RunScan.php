@@ -96,9 +96,26 @@ class RunScan implements ShouldQueue
             'command' => $process->getCommandLine(),
         ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
-        $process->run();
+        try {
+            $process->run(function (string $type, string $buffer) use ($report): void {
+                Log::debug('[NODE OUTPUT]', [
+                    'scan_id' => $report->id,
+                    'type' => $type,
+                    'output' => $buffer,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('[SCAN TRACE] node_process_exception', [
+                'scan_id' => $report->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
         Log::debug('[SCAN TRACE] node_process_finished', [
             'scan_id' => $report->id,
+            'exit_code' => $process->getExitCode(),
+            'exit_code_text' => $process->getExitCodeText(),
             'successful' => $process->isSuccessful(),
         ]);
         Log::info('[SCAN] Node Scanner finished', ['scan_id' => $report->id]);
@@ -181,9 +198,26 @@ class RunScan implements ShouldQueue
             'command' => $process->getCommandLine(),
         ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
-        $process->run();
+        try {
+            $process->run(function (string $type, string $buffer) use ($scan): void {
+                Log::debug('[NODE OUTPUT]', [
+                    'scan_id' => $scan->id,
+                    'type' => $type,
+                    'output' => $buffer,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('[SCAN TRACE] node_process_exception', [
+                'scan_id' => $scan->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
         Log::debug('[SCAN TRACE] node_process_finished', [
             'scan_id' => $scan->id,
+            'exit_code' => $process->getExitCode(),
+            'exit_code_text' => $process->getExitCodeText(),
             'successful' => $process->isSuccessful(),
         ]);
         Log::info('[SCAN] Node Scanner finished', ['scan_id' => $scan->id]);
