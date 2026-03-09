@@ -279,7 +279,7 @@ if (!fs.existsSync(resultDir)) {
 (async () => {
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 20);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
-  const maxParallelPages = toPositiveInt(options.max_parallel_pages ?? options.maxParallelPages, 3);
+  const maxParallelPages = toPositiveInt(options.max_parallel_pages ?? options.maxParallelPages ?? options.scan_concurrency ?? options.scanConcurrency, 3);
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
@@ -290,6 +290,7 @@ if (!fs.existsSync(resultDir)) {
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
   log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
+  log(`Node scanner concurrency (max_parallel_pages): ${maxParallelPages}`);
   const previousResultsByUrl = loadPreviousResults(options);
 
   const browser = await puppeteer.launch({ headless: true });

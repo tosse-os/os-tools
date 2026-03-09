@@ -41,7 +41,7 @@ class RunScan implements ShouldQueue
             'max_pages' => config('seo.max_pages', 20),
             'max_depth' => config('seo.max_depth', 2),
             'page_timeout' => config('seo.page_timeout', 30),
-            'max_parallel_pages' => config('seo.max_parallel_pages', 3),
+            'max_parallel_pages' => (int) env('SCAN_CONCURRENCY', config('seo.max_parallel_pages', 3)),
             'max_retries' => config('seo.max_retries', 3),
             'retry_delay' => config('seo.retry_delay', 10),
             'max_scan_time' => config('seo.max_scan_time', 300),
