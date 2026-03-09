@@ -26,7 +26,10 @@ try {
 }
 
 (async () => {
-  log(`[scanner] scan start | url=${options.url} | checks=${Array.isArray(options.checks) ? options.checks.join(',') : ''}`);
+  const checks = Array.isArray(options.checks) ? options.checks : [];
+  log(
+    `[scanner] scan started | url=${options.url} | checks=${checks.join(',')} | max_pages=${options.max_pages ?? ''} | max_depth=${options.max_depth ?? ''} | max_scan_time=${options.max_scan_time ?? ''}`
+  );
 
   const browser = await puppeteer.launch({ headless: 'new' });
   const page = await browser.newPage();
@@ -41,13 +44,13 @@ try {
       title: await page.title(),
     };
 
-    if (options.checks.includes('status')) {
+    if (checks.includes('status')) {
       result.statusCheck = await statusCheck(page, options.url);
     }
-    if (options.checks.includes('alt')) {
+    if (checks.includes('alt')) {
       result.altCheck = await altCheck(page);
     }
-    if (options.checks.includes('heading')) {
+    if (checks.includes('heading')) {
       result.headingCheck = await headingCheck(page);
     }
 

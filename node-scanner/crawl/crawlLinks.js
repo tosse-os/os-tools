@@ -29,6 +29,10 @@ function getUrlIdentity(urlString) {
   }
 }
 
+function normalizeHost(hostname) {
+  return (hostname || '').toLowerCase().replace(/^www\./, '');
+}
+
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const log = createLogger(options.logger);
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 10);
@@ -44,7 +48,9 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const normalizedStartUrl = normalizeUrl(startUrl);
 
-  log(`[crawlLinks] scan start | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`);
+  log(
+    `[crawlLinks] scan started | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`
+  );
 
   if (!normalizedStartUrl) {
     return includeLinkGraph
@@ -60,9 +66,9 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       : [];
   }
 
-  let origin;
+  let startParsed;
   try {
-    origin = new URL(normalizedStartUrl).origin;
+    startParsed = new URL(normalizedStartUrl);
   } catch {
     return includeLinkGraph
       ? {
@@ -77,12 +83,15 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       : [];
   }
 
+  const startHost = normalizeHost(startParsed.hostname);
+
   const visitedUrls = new Set();
   const visitedIdentities = new Set();
   const queuedIdentities = new Set();
   const discoveredUrls = new Set([normalizedStartUrl]);
   const depthByUrl = new Map([[normalizedStartUrl, 0]]);
   const queue = [{ url: normalizedStartUrl, depth: 0 }];
+  queuedIdentities.add(getUrlIdentity(normalizedStartUrl) || normalizedStartUrl.toLowerCase());
 
   const outgoingLinks = new Map();
   const incomingCounts = new Map();
@@ -136,15 +145,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     const currentIdentity = getUrlIdentity(url) || url.toLowerCase();
     queuedIdentities.delete(currentIdentity);
 
-    log(`[crawlLinks] url crawled | url=${url} | current_depth=${depth} | queue_size=${queue.length}`);
+    log(`[crawlLinks] current crawl depth | url=${url} | depth=${depth}`);
+    log(`[crawlLinks] current queue size | size=${queue.length}`);
+    log(`[crawlLinks] url crawled | url=${url} | depth=${depth}`);
 
     if (visitedIdentities.has(currentIdentity)) {
-      log(`[crawlLinks] links skipped | reason=already_visited | url=${url} | current_depth=${depth}`);
+      log(`[crawlLinks] links rejected (duplicate) | url=${url} | reason=already_visited`);
       continue;
     }
 
     if (depth > maxDepth) {
-      log(`[crawlLinks] links skipped | reason=max_depth_exceeded | url=${url} | current_depth=${depth}`);
+      log(`[crawlLinks] links rejected | url=${url} | reason=max_depth_exceeded | depth=${depth}`);
       continue;
     }
 
@@ -157,7 +168,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
         links = await page.$$eval('a[href]', (anchors) =>
           anchors
-            .map((anchor) => anchor.getAttribute('href'))
+            .map((anchor) => anchor.href || anchor.getAttribute('href'))
             .filter(Boolean)
             .map((href) => href.trim())
             .filter((href) => !href.startsWith('#'))
@@ -169,7 +180,9 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         success = true;
         break;
       } catch (error) {
-        log(`[crawlLinks] links skipped | reason=page_load_failed | url=${url} | attempt=${attempt} | message=${error.message}`);
+        log(
+          `[crawlLinks] links rejected | reason=page_load_failed | url=${url} | attempt=${attempt} | message=${error.message}`
+        );
         if (attempt < maxRetries) {
           await sleep(retryDelayMs);
         }
@@ -186,20 +199,13 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     ensureOutgoingSet(url);
 
     const nextDepth = depth + 1;
+    log(`[crawlLinks] links discovered | source=${url} | count=${links.length} | next_depth=${nextDepth}`);
 
     for (const rawLink of links) {
-      let absolute;
+      const normalized = normalizeUrl(rawLink, url);
 
-      try {
-        absolute = new URL(rawLink, url).toString();
-      } catch {
-        log(`[crawlLinks] links skipped | reason=invalid_url | source=${url} | candidate=${rawLink} | current_depth=${depth}`);
-        continue;
-      }
-
-      const normalized = normalizeUrl(absolute);
       if (!normalized) {
-        log(`[crawlLinks] links skipped | reason=normalization_failed | source=${url} | candidate=${absolute} | current_depth=${depth}`);
+        log(`[crawlLinks] links rejected | reason=normalization_failed | source=${url} | candidate=${rawLink}`);
         continue;
       }
 
@@ -207,16 +213,15 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       try {
         parsed = new URL(normalized);
       } catch {
-        log(`[crawlLinks] links skipped | reason=parse_failed | source=${url} | candidate=${normalized} | current_depth=${depth}`);
+        log(`[crawlLinks] links rejected | reason=parse_failed | source=${url} | candidate=${normalized}`);
         continue;
       }
 
-      if (parsed.origin !== origin) {
-        log(`[crawlLinks] links skipped | reason=external_link | source=${url} | candidate=${normalized} | current_depth=${depth}`);
+      const isInternal = normalizeHost(parsed.hostname) === startHost;
+      if (!isInternal) {
+        log(`[crawlLinks] links rejected (external) | source=${url} | link=${normalized}`);
         continue;
       }
-
-      log(`[crawlLinks] links discovered | source=${url} | link=${normalized} | discovered_depth=${nextDepth}`);
 
       discoveredUrls.add(normalized);
       addInternalEdge(url, normalized);
@@ -226,31 +231,31 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       }
 
       if (nextDepth > maxDepth) {
-        log(`[crawlLinks] links skipped | reason=max_depth_reached | link=${normalized} | current_depth=${depth} | next_depth=${nextDepth}`);
+        log(`[crawlLinks] links rejected | reason=max_depth_reached | link=${normalized} | next_depth=${nextDepth}`);
         continue;
       }
 
       if (visitedUrls.size + queue.length >= maxPages) {
-        log(`[crawlLinks] links skipped | reason=max_pages_budget | link=${normalized} | current_depth=${depth}`);
+        log(`[crawlLinks] links rejected | reason=max_pages_budget | link=${normalized}`);
         continue;
       }
 
       if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
         stopReason = 'crawl budget reached (max scan time reached)';
-        log(`[crawlLinks] links skipped | reason=max_scan_time_reached | link=${normalized} | current_depth=${depth}`);
+        log(`[crawlLinks] links rejected | reason=max_scan_time_reached | link=${normalized}`);
         break;
       }
 
       const identity = getUrlIdentity(normalized) || normalized.toLowerCase();
 
       if (visitedIdentities.has(identity) || queuedIdentities.has(identity)) {
-        log(`[crawlLinks] links skipped | reason=duplicate | link=${normalized} | duplicate_key=${identity}`);
+        log(`[crawlLinks] links rejected (duplicate) | link=${normalized} | duplicate_key=${identity}`);
         continue;
       }
 
       queue.push({ url: normalized, depth: nextDepth });
       queuedIdentities.add(identity);
-      log(`[crawlLinks] links queued | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
+      log(`[crawlLinks] links accepted into crawl queue | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
     }
 
     if (stopReason === 'crawl budget reached (max scan time reached)') {
