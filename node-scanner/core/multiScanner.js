@@ -277,6 +277,7 @@ if (!fs.existsSync(resultDir)) {
 }
 
 (async () => {
+  const checks = Array.isArray(options.checks) ? options.checks : [];
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 20);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
   const maxParallelPages = toPositiveInt(options.max_parallel_pages ?? options.maxParallelPages ?? options.scan_concurrency ?? options.scanConcurrency, 3);
@@ -290,6 +291,7 @@ if (!fs.existsSync(resultDir)) {
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
   log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
+  log(`[scanner] start | url=${options.url} | checks=${checks.join(',')} | max_pages=${maxPages} | max_depth=${maxDepth}`);
   log(`Node scanner concurrency (max_parallel_pages): ${maxParallelPages}`);
   const previousResultsByUrl = loadPreviousResults(options);
 
@@ -322,7 +324,8 @@ if (!fs.existsSync(resultDir)) {
       max_depth: maxDepth,
       page_timeout: pageTimeoutSeconds,
       max_retries: maxRetries,
-      retry_delay: retryDelaySeconds
+      retry_delay: retryDelaySeconds,
+      logger: (message) => log(`[scanner] ${message}`)
     });
   } catch (err) {
     log(`Fehler beim Crawlen der Startseite ${options.url}: ${err.message}`);
@@ -330,7 +333,12 @@ if (!fs.existsSync(resultDir)) {
     await seedPage.close();
   }
 
+  if (absoluteUrls.length === 0) {
+    log(`[scanner] crawl returned no urls | seed=${options.url}`);
+  }
+
   if (!absoluteUrls.includes(options.url) && absoluteUrls.length < maxPages) {
+    log(`[scanner] seed url injected into queue | url=${options.url}`);
     absoluteUrls.unshift(options.url);
   }
 
@@ -380,7 +388,7 @@ if (!fs.existsSync(resultDir)) {
 
           result.title = '';
 
-          if (options.checks.includes('status')) {
+          if (checks.includes('status')) {
             result.statusCheck = {
               status: preFetched.status,
               redirected: preFetched.finalUrl && preFetched.finalUrl !== url,
@@ -400,11 +408,11 @@ if (!fs.existsSync(resultDir)) {
             };
             result.title = extracted.title;
 
-            if (options.checks.includes('alt')) {
+            if (checks.includes('alt')) {
               result.altCheck = buildAltCheckFromImages(extracted.images);
             }
 
-            if (options.checks.includes('heading')) {
+            if (checks.includes('heading')) {
               result.headingCheck = buildHeadingCheckFromHeadings(extracted.headings);
             }
 
@@ -443,11 +451,11 @@ if (!fs.existsSync(resultDir)) {
               html: renderedHtml
             };
 
-            if (options.checks.includes('alt')) {
+            if (checks.includes('alt')) {
               result.altCheck = await altCheck(page);
             }
 
-            if (options.checks.includes('heading')) {
+            if (checks.includes('heading')) {
               result.headingCheck = await headingCheck(page);
             }
 
@@ -489,11 +497,11 @@ if (!fs.existsSync(resultDir)) {
             && String(previousFingerprint.content_hash || '') === String(result.fingerprint.content_hash || '');
 
           if (isFingerprintIdentical) {
-            if (options.checks.includes('alt') && previousResult.altCheck) {
+            if (checks.includes('alt') && previousResult.altCheck) {
               result.altCheck = previousResult.altCheck;
             }
 
-            if (options.checks.includes('heading') && previousResult.headingCheck) {
+            if (checks.includes('heading') && previousResult.headingCheck) {
               result.headingCheck = previousResult.headingCheck;
             }
 
@@ -525,7 +533,7 @@ if (!fs.existsSync(resultDir)) {
         } catch (err) {
           result.error = err.message;
 
-          if (options.checks.includes('status') && !result.statusCheck) {
+          if (checks.includes('status') && !result.statusCheck) {
             result.statusCheck = {
               status: 'error',
               redirected: false,
