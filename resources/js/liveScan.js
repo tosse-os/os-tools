@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const tbody = document.getElementById('result-body');
   const abortBtn = document.getElementById('abort-button');
   const abortSection = document.getElementById('abort-section');
+  const progressBar = document.getElementById('progress-bar');
+  const progressCount = document.getElementById('progress-count');
+  const failedAlert = document.getElementById('failed-alert');
+  const retryBtn = document.getElementById('retry-button');
 
   let scanId = null;
   let currentIndex = 0;
@@ -20,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     tbody.innerHTML = '';
     currentIndex = 0;
     progressEl.textContent = 'Scan gestartet...';
+    progressCount.textContent = '0 / 0';
+    progressBar.style.width = '0%';
+    failedAlert.classList.add('hidden');
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
 
@@ -40,12 +47,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function startPolling() {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+
     pollingInterval = setInterval(async () => {
 
-      const progressRes = await fetch(`/scan/${scanId}/progress?ts=${Date.now()}`);
+      const progressRes = await fetch(`/scans/${scanId}/progress?ts=${Date.now()}`);
       const progress = await progressRes.json();
 
-      progressEl.textContent = `Scanne Seite ${progress.current} / ${progress.total}`;
+      progressEl.textContent = `${progress.current} / ${progress.total} pages scanned`;
+      progressCount.textContent = `${progress.current} / ${progress.total}`;
+
+      const percent = progress.total > 0
+        ? Math.min(100, Math.round((progress.current / progress.total) * 100))
+        : 0;
+      progressBar.style.width = `${percent}%`;
 
       while (currentIndex < progress.current) {
 
@@ -68,17 +85,27 @@ document.addEventListener('DOMContentLoaded', () => {
         currentIndex++;
       }
 
-      if (progress.status === 'done' || progress.status === 'aborted') {
+      if (progress.status === 'done' || progress.status === 'aborted' || progress.status === 'failed') {
         clearInterval(pollingInterval);
         spinner.classList.add('hidden');
         abortSection.classList.add('hidden');
-        progressEl.textContent = progress.status === 'aborted'
-          ? 'Scan abgebrochen'
-          : 'Scan abgeschlossen';
+
+        if (progress.status === 'failed') {
+          progressEl.textContent = '⚠ Scan failed';
+          failedAlert.classList.remove('hidden');
+        } else {
+          progressEl.textContent = progress.status === 'aborted'
+            ? 'Scan abgebrochen'
+            : 'Scan abgeschlossen';
+        }
       }
 
-    }, 1000);
+    }, 3000);
   }
+
+  retryBtn.addEventListener('click', () => {
+    form.requestSubmit();
+  });
 
   abortBtn.addEventListener('click', async () => {
 

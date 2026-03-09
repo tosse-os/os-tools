@@ -24,7 +24,18 @@
 </div>
 
 <div id="scan-progress" class="mb-4 text-sm text-gray-700">
-  <span id="progress-text">Noch kein Scan gestartet.</span>
+  <div class="flex justify-between items-center mb-2">
+    <span id="progress-text">Noch kein Scan gestartet.</span>
+    <span id="progress-count" class="text-xs text-gray-500">0 / 0</span>
+  </div>
+  <div class="w-full bg-gray-200 rounded-full h-3">
+    <div id="progress-bar" class="bg-orange-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+  </div>
+</div>
+
+<div id="failed-alert" class="mb-4 hidden p-3 rounded bg-red-100 text-red-700 flex items-center justify-between">
+  <span>⚠ Scan failed</span>
+  <button id="retry-button" class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">Retry</button>
 </div>
 
 <div class="overflow-x-auto bg-white shadow-sm rounded">

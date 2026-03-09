@@ -29,6 +29,35 @@
 
   </div>
 
+
+  <div class="bg-white rounded shadow-sm p-6 mb-10">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold">System Status</h2>
+      <a href="{{ route('queues.index') }}" class="text-sm text-blue-600 hover:underline">Queue Monitor öffnen</a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Queue Status</div>
+        <div class="space-y-1 text-sm">
+          <div><span class="font-semibold">Active Jobs:</span> {{ $activeJobs }}</div>
+          <div><span class="font-semibold">Queued Jobs:</span> {{ $queuedJobs }}</div>
+          <div><span class="font-semibold">Failed Jobs:</span> {{ $failedJobs }}</div>
+        </div>
+      </div>
+
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Running Scans</div>
+        <div class="text-2xl font-semibold text-yellow-700">{{ $runningScans }}</div>
+      </div>
+
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Failed Scans</div>
+        <div class="text-2xl font-semibold text-red-700">{{ $failedScans }}</div>
+      </div>
+    </div>
+  </div>
+
   <div class="flex justify-between items-center mb-4">
     <h2 class="text-lg font-semibold">
       Letzte Reports
