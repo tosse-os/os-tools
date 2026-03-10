@@ -42,9 +42,9 @@ function normalizeUrl(raw, base = '') {
       url.port = '';
     }
 
-    return url.toString();
+    return url.href.replace(/\/$/, '');
   } catch {
-    return null;
+    return raw;
   }
 }
 
