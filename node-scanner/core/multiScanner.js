@@ -221,13 +221,14 @@ function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSiz
   });
 }
 
-function publishPageScanned({ logger, url, status, altCount, headingCount }) {
+function publishPageScanned({ logger, url, status, altCount, headingCount, error = null }) {
   const event = {
     type: 'page_scanned',
     url,
     status,
     alt_count: altCount,
     heading_count: headingCount,
+    error,
   };
 
   logger.info('page_scanned', event);
@@ -638,6 +639,7 @@ if (!fs.existsSync(resultDir)) {
         status: result.statusCheck?.status ?? null,
         altCount: result.altCheck?.altMissing ?? 0,
         headingCount: Array.isArray(result.headingCheck?.list) ? result.headingCheck.list.length : 0,
+        error: result.error ?? null,
       });
 
       completed += 1;

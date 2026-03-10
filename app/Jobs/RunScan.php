@@ -229,6 +229,7 @@ class RunScan implements ShouldQueue
             'status' => $payload['status'] ?? null,
             'alt_count' => (int) ($payload['alt_count'] ?? 0),
             'heading_count' => (int) ($payload['heading_count'] ?? 0),
+            'error' => $payload['error'] ?? null,
         ];
 
         File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
