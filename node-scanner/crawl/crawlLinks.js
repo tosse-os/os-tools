@@ -51,12 +51,10 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const maxPages = Math.max(2, toPositiveInt(options.max_pages ?? options.maxPages, 10));
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
   const maxScanTimeSeconds = toPositiveInt(options.max_scan_time ?? options.maxScanTime, 300);
-  const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
   const includeLinkGraph = options.include_link_graph === true || options.includeLinkGraph === true;
 
-  const pageTimeoutMs = pageTimeoutSeconds * 1000;
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
@@ -158,8 +156,8 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     log.info('crawl_progress', {
       scan_id: scanId,
-      queue: queue.length,
-      visited: visitedUrls.size,
+      scanned_pages: visitedUrls.size,
+      queue_size: queue.length,
       current_url: url,
       current_depth: depth,
     });
@@ -182,7 +180,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       try {
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (err) {
           throw err;
         }
