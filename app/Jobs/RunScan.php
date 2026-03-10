@@ -194,9 +194,10 @@ class RunScan implements ShouldQueue
         $reportPersistenceService->syncFromStorage($report->fresh());
     }
 
-    private function persistScanProgressEvent(string $scanId, array $payload): void
+    private function persistScanEvent(string $scanId, array $payload): void
     {
-        if (($payload['type'] ?? null) !== 'crawl_progress') {
+        $eventType = $payload['type'] ?? null;
+        if (!in_array($eventType, ['crawl_progress', 'page_scanned'], true)) {
             return;
         }
 
@@ -205,18 +206,32 @@ class RunScan implements ShouldQueue
             File::ensureDirectoryExists($directory);
         }
 
-        $progressPayload = [
-            'type' => 'crawl_progress',
-            'status' => 'running',
-            'stage' => $payload['stage'] ?? 'scanning',
-            'current' => (int) ($payload['scanned_pages'] ?? 0),
-            'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
-            'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
-            'queue_size' => (int) ($payload['queue_size'] ?? 0),
-            'current_url' => $payload['current_url'] ?? null,
+        if ($eventType === 'crawl_progress') {
+            $progressPayload = [
+                'type' => 'crawl_progress',
+                'status' => $payload['status'] ?? 'running',
+                'stage' => $payload['stage'] ?? 'scanning',
+                'current' => (int) ($payload['scanned_pages'] ?? 0),
+                'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
+                'queue_size' => (int) ($payload['queue_size'] ?? 0),
+                'current_url' => $payload['current_url'] ?? null,
+            ];
+
+            File::put($directory.'/progress.json', json_encode($progressPayload));
+
+            return;
+        }
+
+        $eventPayload = [
+            'type' => 'page_scanned',
+            'url' => $payload['url'] ?? null,
+            'status' => $payload['status'] ?? null,
+            'alt_count' => (int) ($payload['alt_count'] ?? 0),
+            'heading_count' => (int) ($payload['heading_count'] ?? 0),
         ];
 
-        File::put($directory.'/progress.json', json_encode($progressPayload));
+        File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
     }
 
     private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
@@ -292,8 +307,8 @@ class RunScan implements ShouldQueue
                     }
 
                     $payload = json_decode($line, true);
-                    if (is_array($payload) && ($payload['type'] ?? null) === 'crawl_progress') {
-                        $this->persistScanProgressEvent($scan->id, $payload);
+                    if (is_array($payload)) {
+                        $this->persistScanEvent($scan->id, $payload);
                     }
                 }
 

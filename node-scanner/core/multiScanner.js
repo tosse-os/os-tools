@@ -221,6 +221,19 @@ function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSiz
   });
 }
 
+function publishPageScanned({ logger, url, status, altCount, headingCount }) {
+  const event = {
+    type: 'page_scanned',
+    url,
+    status,
+    alt_count: altCount,
+    heading_count: headingCount,
+  };
+
+  logger.info('page_scanned', event);
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
 function createFingerprint({ title = '', h1 = [], content = '', html = '' }) {
   return {
     title: String(title || ''),
@@ -618,6 +631,15 @@ if (!fs.existsSync(resultDir)) {
       }
     } finally {
       fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
+
+      publishPageScanned({
+        logger,
+        url,
+        status: result.statusCheck?.status ?? null,
+        altCount: result.altCheck?.altMissing ?? 0,
+        headingCount: Array.isArray(result.headingCheck?.list) ? result.headingCheck.list.length : 0,
+      });
+
       completed += 1;
       const queueSize = Math.max(absoluteUrls.length - completed, 0);
       const progressStatus = fs.existsSync(abortPath) ? 'aborted' : (failedByTimeout ? 'failed' : 'running');
