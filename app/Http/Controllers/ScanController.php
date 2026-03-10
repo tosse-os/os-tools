@@ -52,16 +52,47 @@ class ScanController extends Controller
 
     public function progress(Request $request, Scan $scan)
     {
-        $path = storage_path("scans/{$scan->id}/progress.json");
-        $eventsPath = storage_path("scans/{$scan->id}/events.jsonl");
+        $scanDirectory = storage_path("scans/{$scan->id}");
+        $path = $scanDirectory.'/progress.json';
+        $eventsPath = $scanDirectory.'/events.jsonl';
         $eventCursor = (int) $request->query('event_cursor', 0);
         $events = [];
 
         if (File::exists($eventsPath)) {
             $lines = preg_split('/\r?\n/', trim(File::get($eventsPath)));
             $lines = array_filter($lines, static fn ($line) => $line !== '');
-            $events = array_map(static fn ($line) => json_decode($line, true), $lines);
-            $events = array_values(array_filter($events, static fn ($event) => is_array($event)));
+            $parsedEvents = array_map(static fn ($line) => json_decode($line, true), $lines);
+            $events = array_values(array_filter($parsedEvents, static fn ($event) => is_array($event)));
+        }
+
+        $resultFilePaths = File::exists($scanDirectory) ? (File::glob($scanDirectory.'/*.json') ?: []) : [];
+
+        $resultFiles = collect($resultFilePaths)
+            ->filter(static function (string $filePath): bool {
+                return preg_match('/\/\d+\.json$/', $filePath) === 1;
+            })
+            ->sort(static function (string $left, string $right): int {
+                return (int) basename($left, '.json') <=> (int) basename($right, '.json');
+            })
+            ->values();
+
+        foreach ($resultFiles as $resultFile) {
+            $result = json_decode(File::get($resultFile), true);
+
+            if (!is_array($result)) {
+                continue;
+            }
+
+            $events[] = [
+                'type' => 'page_scanned',
+                'url' => $result['url'] ?? null,
+                'status' => $result['statusCheck']['status'] ?? null,
+                'alt_count' => $result['altCheck']['altMissing'] ?? 0,
+                'heading_count' => isset($result['headingCheck']['list']) && is_array($result['headingCheck']['list'])
+                    ? count($result['headingCheck']['list'])
+                    : 0,
+                'error' => $result['error'] ?? null,
+            ];
         }
 
         $newEvents = array_slice($events, max($eventCursor, 0));
