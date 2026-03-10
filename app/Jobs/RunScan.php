@@ -22,11 +22,13 @@ class RunScan implements ShouldQueue
 
     public string $scanId;
     public array $checks;
+    public bool $multiScan = false;
 
-    public function __construct(string $scanId, array $checks = [])
+    public function __construct(string $scanId, array $checks = [], bool $multiScan = false)
     {
         $this->scanId = $scanId;
         $this->checks = $checks;
+        $this->multiScan = $multiScan;
     }
 
     public function handle(ReportPersistenceService $reportPersistenceService): void
