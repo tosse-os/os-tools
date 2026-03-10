@@ -50,9 +50,21 @@ class ScanController extends Controller
         return response()->json(['scanId' => $scan->id]);
     }
 
-    public function progress(Scan $scan)
+    public function progress(Request $request, Scan $scan)
     {
         $path = storage_path("scans/{$scan->id}/progress.json");
+        $eventsPath = storage_path("scans/{$scan->id}/events.jsonl");
+        $eventCursor = (int) $request->query('event_cursor', 0);
+        $events = [];
+
+        if (File::exists($eventsPath)) {
+            $lines = preg_split('/\r?\n/', trim(File::get($eventsPath)));
+            $lines = array_filter($lines, static fn ($line) => $line !== '');
+            $events = array_map(static fn ($line) => json_decode($line, true), $lines);
+            $events = array_values(array_filter($events, static fn ($event) => is_array($event)));
+        }
+
+        $newEvents = array_slice($events, max($eventCursor, 0));
 
         if (!File::exists($path)) {
             return response()->json([
@@ -64,6 +76,8 @@ class ScanController extends Controller
                 'scanned_pages' => 0,
                 'queue_size' => 0,
                 'current_url' => null,
+                'events' => $newEvents,
+                'event_cursor' => count($events),
             ]);
         }
 
@@ -79,6 +93,8 @@ class ScanController extends Controller
             'scanned_pages' => $json['scanned_pages'] ?? ($json['current'] ?? 0),
             'queue_size' => $json['queue_size'] ?? max(($json['total'] ?? 0) - ($json['current'] ?? 0), 0),
             'current_url' => $json['current_url'] ?? null,
+            'events' => $newEvents,
+            'event_cursor' => count($events),
         ]);
     }
 

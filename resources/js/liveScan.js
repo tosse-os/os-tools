@@ -17,7 +17,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let scanId = null;
   let currentIndex = 0;
+  let eventCursor = 0;
   let pollingInterval = null;
+  const renderedUrls = new Set();
+
+  const appendResultRow = ({ url, status, altCount, headingCount, error = '–' }) => {
+    if (!url || renderedUrls.has(url)) {
+      return;
+    }
+
+    const tr = document.createElement('tr');
+    tr.className = 'border-b hover:bg-gray-50';
+
+    tr.innerHTML = `
+      <td class="p-2">${currentIndex + 1}</td>
+      <td class="p-2 break-all"><a href="${url}" class="text-orange-600 hover:underline" target="_blank">${url}</a></td>
+      <td class="p-2">${status ?? '–'}</td>
+      <td class="p-2">${altCount ?? 0}</td>
+      <td class="p-2">${headingCount ?? 0}</td>
+      <td class="p-2 text-red-600">${error}</td>
+    `;
+
+    tbody.appendChild(tr);
+    renderedUrls.add(url);
+    currentIndex += 1;
+  };
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -25,13 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = form.url.value;
     const checks = Array.from(document.querySelectorAll('.check-option:checked')).map(el => el.value);
 
-    console.log('[SCAN TRACE] button_clicked', {
-      url,
-      checks,
-    });
-
     tbody.innerHTML = '';
     currentIndex = 0;
+    eventCursor = 0;
+    renderedUrls.clear();
     progressEl.textContent = 'Scanning site...';
     progressCount.textContent = '0 / 0';
     progressBar.style.width = '0%';
@@ -43,9 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
 
-    console.log('[SCAN TRACE] sending_scan_request');
-
-    const res = await fetch("/scan", {
+    const res = await fetch('/scan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -55,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const data = await res.json();
-    console.log('[SCAN TRACE] scan_request_response', data);
     if (!data.scanId) return;
 
     scanId = data.scanId;
@@ -68,8 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     pollingInterval = setInterval(async () => {
-
-      const progressRes = await fetch(`/scans/${scanId}/progress?ts=${Date.now()}`);
+      const progressRes = await fetch(`/scans/${scanId}/progress?event_cursor=${eventCursor}&ts=${Date.now()}`);
       const progress = await progressRes.json();
 
       progressEl.textContent = 'Scanning site...';
@@ -84,25 +101,23 @@ document.addEventListener('DOMContentLoaded', () => {
         : 0;
       progressBar.style.width = `${percent}%`;
 
-      while (currentIndex < progress.current) {
+      if (Array.isArray(progress.events)) {
+        progress.events.forEach((event) => {
+          if (event?.type !== 'page_scanned') {
+            return;
+          }
 
-        const res = await fetch(`/scan/${scanId}/result/${currentIndex}`);
-        const row = await res.json();
+          appendResultRow({
+            url: event.url,
+            status: event.status,
+            altCount: event.alt_count,
+            headingCount: event.heading_count,
+          });
+        });
+      }
 
-        const tr = document.createElement('tr');
-        tr.className = 'border-b hover:bg-gray-50';
-
-        tr.innerHTML = `
-          <td class="p-2">${currentIndex + 1}</td>
-          <td class="p-2 break-all"><a href="${row.url}" class="text-orange-600 hover:underline" target="_blank">${row.url}</a></td>
-          <td class="p-2">${row.statusCheck?.status ?? '–'}</td>
-          <td class="p-2">${row.altCheck?.altMissing ?? 0}</td>
-          <td class="p-2">${row.headingCheck?.list?.length ?? 0}</td>
-          <td class="p-2 text-red-600">${row.error ?? (row.headingCheck?.errors?.join(', ') ?? '–')}</td>
-        `;
-
-        tbody.appendChild(tr);
-        currentIndex++;
+      if (typeof progress.event_cursor === 'number') {
+        eventCursor = progress.event_cursor;
       }
 
       if (progress.status === 'done' || progress.status === 'aborted' || progress.status === 'failed') {
