@@ -28,7 +28,7 @@
     </div>
   @endif
 
-  <form method="GET" action="{{ route('reports.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+  <form method="GET" action="{{ route('reports.index') }}" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
     <div>
       <label for="keyword" class="block text-xs font-medium text-gray-700 mb-1">Keyword</label>
       <input id="keyword" type="text" name="keyword" value="{{ $filters['keyword'] ?? '' }}" class="w-full rounded-lg border-gray-300 text-sm" placeholder="z. B. Glaserei">
@@ -40,6 +40,15 @@
     <div>
       <label for="domain" class="block text-xs font-medium text-gray-700 mb-1">Domain</label>
       <input id="domain" type="text" name="domain" value="{{ $filters['domain'] ?? '' }}" class="w-full rounded-lg border-gray-300 text-sm" placeholder="z. B. example.de">
+    </div>
+    <div>
+      <label for="type" class="block text-xs font-medium text-gray-700 mb-1">Type</label>
+      <select id="type" name="type" class="w-full rounded-lg border-gray-300 text-sm">
+        <option value="">All</option>
+        <option value="crawler" @selected(($filters['type'] ?? '') === 'crawler')>Crawler</option>
+        <option value="local_seo" @selected(($filters['type'] ?? '') === 'local_seo')>Local SEO</option>
+        <option value="seo" @selected(($filters['type'] ?? '') === 'seo')>SEO</option>
+      </select>
     </div>
     <div class="flex gap-2">
       <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">Filtern</button>
@@ -109,6 +118,7 @@
                     <div class="font-semibold text-gray-900">Project: {{ $project }}</div>
                     <div class="text-gray-700">{{ $keyword }} • {{ $city }}</div>
                     <div class="text-gray-700">{{ $domain }}</div>
+                    <div class="text-xs text-gray-500 uppercase">{{ str_replace('_', ' ', $report->type ?? '—') }}</div>
                     <div class="text-xs text-gray-500">{{ $startedAt ? $startedAt->format('d.m.Y H:i') : '—' }}</div>
                     <div class="pt-1">
                       <span class="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs {{ $status['class'] }}">

@@ -36,6 +36,7 @@ class LocalSeoController extends Controller
       'user_id' => auth()->id(),
       'analysis_id' => $analysis->id,
       'type' => 'local_seo',
+      'project_id' => $analysis->project_id,
       'url' => $request->url,
       'keyword' => $request->keyword,
       'city' => $request->city,

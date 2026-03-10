@@ -12,6 +12,8 @@ class ReportResult extends Model
     'url',
     'position',
     'score',
+    'key',
+    'value',
     'payload',
   ];
 

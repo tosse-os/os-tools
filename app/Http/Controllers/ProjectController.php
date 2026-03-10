@@ -37,7 +37,7 @@ class ProjectController extends Controller
                 ->withCount('reports')
                 ->with([
                     'reports' => fn($reportQuery) => $reportQuery
-                        ->select('id', 'analysis_id', 'score', 'started_at')
+                        ->select('id', 'analysis_id', 'type', 'status', 'score', 'started_at')
                         ->orderByDesc('started_at'),
                 ])
                 ->orderBy('keyword')
