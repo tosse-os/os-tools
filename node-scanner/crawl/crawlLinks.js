@@ -46,6 +46,17 @@ function normalizeHost(hostname) {
   return (hostname || '').toLowerCase().replace(/^www\./, '');
 }
 
+function hasSkippedPath(pathname) {
+  if (!pathname) {
+    return false;
+  }
+
+  const normalizedPath = pathname.toLowerCase();
+  const skippedPrefixes = ['/comment/', '/user/', '/admin/', '/node/'];
+
+  return skippedPrefixes.some((prefix) => normalizedPath.startsWith(prefix));
+}
+
 module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const log = createLogger(options.logger);
   const maxPages = Math.max(2, toPositiveInt(options.max_pages ?? options.maxPages, 10));
@@ -183,6 +194,19 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       continue;
     }
 
+    try {
+      const currentParsed = new URL(url);
+      if (hasSkippedPath(currentParsed.pathname)) {
+        incrementSkipped('excluded_path');
+        log.debug('crawl_link_skipped_summary', { scan_id: scanId, page_url: url, skipped_total: 1, skipped_reasons: skippedCounts });
+        continue;
+      }
+    } catch {
+      incrementSkipped('parse_failed');
+      log.debug('crawl_link_skipped_summary', { scan_id: scanId, page_url: url, skipped_total: 1, skipped_reasons: skippedCounts });
+      continue;
+    }
+
     let links = [];
     let success = false;
 
@@ -265,6 +289,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       const isInternal = normalizeHost(parsed.hostname) === startHost;
       if (!isInternal) {
         incrementSkipped('external');
+        continue;
+      }
+
+      if (hasSkippedPath(parsed.pathname)) {
+        incrementSkipped('excluded_path');
         continue;
       }
 
