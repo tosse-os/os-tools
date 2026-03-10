@@ -47,13 +47,8 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
-  let normalizedStartUrl = normalizeUrl(startUrl);
+  const normalizedStartUrl = normalizeUrl(startUrl) || startUrl;
   const scanId = options.scan_id ?? options.scanId ?? 'unknown';
-
-  if (!normalizedStartUrl) {
-    console.warn('[CRAWLER FIX] normalizeUrl returned null, using raw startUrl');
-    normalizedStartUrl = startUrl;
-  }
 
   console.log('[CRAWLER DEBUG] normalized_start_url', normalizedStartUrl);
 
@@ -83,6 +78,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   }
 
   const startHost = normalizeHost(startParsed.hostname);
+  const baseHost = startParsed.hostname;
 
   const visitedUrls = new Set();
   const visitedIdentities = new Set();
@@ -201,6 +197,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
             .filter((href) => !href.startsWith('tel:'))
             .filter((href) => !href.startsWith('javascript:'))
         );
+
+        links = links.filter((link) => {
+          try {
+            return new URL(link).hostname === baseHost;
+          } catch {
+            return false;
+          }
+        });
 
         console.log('[SCAN TRACE] crawl_links_extracted', {
           scan_id: scanId,
