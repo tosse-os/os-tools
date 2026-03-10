@@ -56,9 +56,14 @@ class ScanController extends Controller
 
         if (!File::exists($path)) {
             return response()->json([
+                'type' => 'crawl_progress',
                 'status' => 'initializing',
+                'stage' => 'queued',
                 'current' => 0,
-                'total' => Config::get('tools.limits.max_urls_per_scan', 10)
+                'total' => Config::get('tools.limits.max_urls_per_scan', 10),
+                'scanned_pages' => 0,
+                'queue_size' => 0,
+                'current_url' => null,
             ]);
         }
 
@@ -66,9 +71,14 @@ class ScanController extends Controller
         $json = json_decode($content, true);
 
         return response()->json([
+            'type' => $json['type'] ?? 'crawl_progress',
             'status' => $json['status'] ?? 'running',
+            'stage' => $json['stage'] ?? 'scanning',
             'current' => $json['current'] ?? 0,
-            'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10)
+            'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10),
+            'scanned_pages' => $json['scanned_pages'] ?? ($json['current'] ?? 0),
+            'queue_size' => $json['queue_size'] ?? max(($json['total'] ?? 0) - ($json['current'] ?? 0), 0),
+            'current_url' => $json['current_url'] ?? null,
         ]);
     }
 

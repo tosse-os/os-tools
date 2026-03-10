@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressCount = document.getElementById('progress-count');
   const failedAlert = document.getElementById('failed-alert');
   const retryBtn = document.getElementById('retry-button');
+  const scanStageEl = document.getElementById('scan-stage');
+  const currentUrlEl = document.getElementById('current-url');
+  const pagesScannedEl = document.getElementById('pages-scanned');
+  const queueSizeEl = document.getElementById('queue-size');
 
   let scanId = null;
   let currentIndex = 0;
@@ -28,9 +32,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tbody.innerHTML = '';
     currentIndex = 0;
-    progressEl.textContent = 'Scan gestartet...';
+    progressEl.textContent = 'Scanning site...';
     progressCount.textContent = '0 / 0';
     progressBar.style.width = '0%';
+    scanStageEl.textContent = 'initializing';
+    currentUrlEl.textContent = '-';
+    pagesScannedEl.textContent = '0';
+    queueSizeEl.textContent = '0';
     failedAlert.classList.add('hidden');
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
@@ -64,8 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const progressRes = await fetch(`/scans/${scanId}/progress?ts=${Date.now()}`);
       const progress = await progressRes.json();
 
-      progressEl.textContent = `${progress.current} / ${progress.total} pages scanned`;
+      progressEl.textContent = 'Scanning site...';
       progressCount.textContent = `${progress.current} / ${progress.total}`;
+      scanStageEl.textContent = progress.stage ?? progress.status ?? 'running';
+      currentUrlEl.textContent = progress.current_url ?? '-';
+      pagesScannedEl.textContent = `${progress.scanned_pages ?? progress.current} / ${progress.total}`;
+      queueSizeEl.textContent = `${progress.queue_size ?? 0}`;
 
       const percent = progress.total > 0
         ? Math.min(100, Math.round((progress.current / progress.total) * 100))
@@ -108,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-    }, 3000);
+    }, 1000);
   }
 
   retryBtn.addEventListener('click', () => {

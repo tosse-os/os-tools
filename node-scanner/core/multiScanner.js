@@ -198,6 +198,29 @@ function writeProgress(resultDir, payload) {
   fs.writeFileSync(path.join(resultDir, 'progress.json'), JSON.stringify(payload));
 }
 
+function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSize, currentUrl, stage, status = 'running' }) {
+  const event = {
+    type: 'crawl_progress',
+    scanned_pages: scannedPages,
+    queue_size: queueSize,
+    current_url: currentUrl,
+  };
+
+  logger.info('crawl_progress', event);
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+
+  writeProgress(resultDir, {
+    current: scannedPages,
+    total,
+    status,
+    stage,
+    current_url: currentUrl,
+    scanned_pages: scannedPages,
+    queue_size: queueSize,
+    type: 'crawl_progress',
+  });
+}
+
 function createFingerprint({ title = '', h1 = [], content = '', html = '' }) {
   return {
     title: String(title || ''),
@@ -346,10 +369,17 @@ if (!fs.existsSync(resultDir)) {
       max_retries: maxRetries,
       retry_delay: retryDelaySeconds,
       logger,
-    });
-
-    logger.info('crawl_progress', {
-      urls_found: absoluteUrls.length
+      onProgress: ({ scanned_pages, queue_size, current_url }) => {
+        publishCrawlProgress({
+          logger,
+          resultDir,
+          total: maxPages,
+          scannedPages: scanned_pages,
+          queueSize: queue_size,
+          currentUrl: current_url,
+          stage: 'crawling',
+        });
+      },
     });
   } catch (err) {
     logger.error('scan_error', { url: options.url, error: err.message });
@@ -377,7 +407,12 @@ if (!fs.existsSync(resultDir)) {
   writeProgress(resultDir, {
     current: 0,
     total: absoluteUrls.length,
-    status: 'running'
+    status: 'running',
+    stage: 'scanning',
+    current_url: null,
+    scanned_pages: 0,
+    queue_size: absoluteUrls.length,
+    type: 'crawl_progress',
   });
 
   let completed = 0;
@@ -585,17 +620,17 @@ if (!fs.existsSync(resultDir)) {
       fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
       completed += 1;
       const queueSize = Math.max(absoluteUrls.length - completed, 0);
+      const progressStatus = fs.existsSync(abortPath) ? 'aborted' : (failedByTimeout ? 'failed' : 'running');
 
-      logger.info('crawl_progress', {
-        scanned_pages: completed,
-        queue_size: queueSize,
-        current_url: url,
-      });
-
-      writeProgress(resultDir, {
-        current: completed,
+      publishCrawlProgress({
+        logger,
+        resultDir,
         total: absoluteUrls.length,
-        status: fs.existsSync(abortPath) ? 'aborted' : (failedByTimeout ? 'failed' : 'running')
+        scannedPages: completed,
+        queueSize,
+        currentUrl: url,
+        stage: 'scanning',
+        status: progressStatus,
       });
 
       await page.close();
@@ -637,7 +672,12 @@ if (!fs.existsSync(resultDir)) {
     writeProgress(resultDir, {
       current: completed,
       total: absoluteUrls.length,
-      status: 'aborted'
+      status: 'aborted',
+      stage: 'aborted',
+      current_url: null,
+      scanned_pages: completed,
+      queue_size: Math.max(absoluteUrls.length - completed, 0),
+      type: 'crawl_progress',
     });
   } else if (failedByTimeout || hasExceededMaxScanTime()) {
     logger.error('scan_error', {
@@ -647,7 +687,12 @@ if (!fs.existsSync(resultDir)) {
     writeProgress(resultDir, {
       current: completed,
       total: absoluteUrls.length,
-      status: 'failed'
+      status: 'failed',
+      stage: 'failed',
+      current_url: null,
+      scanned_pages: completed,
+      queue_size: Math.max(absoluteUrls.length - completed, 0),
+      type: 'crawl_progress',
     });
   } else {
     logger.info('scan_finished', {
@@ -658,7 +703,12 @@ if (!fs.existsSync(resultDir)) {
     writeProgress(resultDir, {
       current: absoluteUrls.length,
       total: absoluteUrls.length,
-      status: 'done'
+      status: 'done',
+      stage: 'completed',
+      current_url: null,
+      scanned_pages: absoluteUrls.length,
+      queue_size: 0,
+      type: 'crawl_progress',
     });
   }
 

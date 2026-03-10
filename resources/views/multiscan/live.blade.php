@@ -33,6 +33,13 @@
   </div>
 </div>
 
+<div id="scan-details" class="mb-4 rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+  <div><strong>Scan stage:</strong> <span id="scan-stage">queued</span></div>
+  <div class="mt-1"><strong>Current page:</strong> <span id="current-url" class="break-all">-</span></div>
+  <div class="mt-1"><strong>Pages scanned:</strong> <span id="pages-scanned">0</span></div>
+  <div class="mt-1"><strong>Queue size:</strong> <span id="queue-size">0</span></div>
+</div>
+
 <div id="failed-alert" class="mb-4 hidden p-3 rounded bg-red-100 text-red-700 flex items-center justify-between">
   <span>⚠ Scan failed</span>
   <button id="retry-button" class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">Retry</button>
