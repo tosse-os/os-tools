@@ -283,7 +283,14 @@ if (!fs.existsSync(resultDir)) {
   const checks = Array.isArray(options.checks) ? options.checks : [];
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 20);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
-  const maxParallelPages = toPositiveInt(options.max_parallel_pages ?? options.maxParallelPages ?? options.scan_concurrency ?? options.scanConcurrency, 3);
+  const maxParallelPages = toPositiveInt(
+    options.max_parallel_pages
+      ?? options.maxParallelPages
+      ?? options.scan_concurrency
+      ?? options.scanConcurrency
+      ?? process.env.CRAWLER_CONCURRENCY,
+    4
+  );
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
@@ -313,7 +320,10 @@ if (!fs.existsSync(resultDir)) {
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const type = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+      const requestUrl = req.url().toLowerCase();
+      const isAnalyticsRequest = /google-analytics|googletagmanager|doubleclick|mixpanel|segment|hotjar|plausible|matomo/.test(requestUrl);
+
+      if (['image', 'font', 'media'].includes(type) || isAnalyticsRequest) {
         req.abort();
       } else {
         req.continue();
@@ -436,7 +446,7 @@ if (!fs.existsSync(resultDir)) {
 
             log(`HTML mode used for ${url}`);
           } else {
-            const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
+            const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
             result.title = await page.title();
 
@@ -574,6 +584,14 @@ if (!fs.existsSync(resultDir)) {
     } finally {
       fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
       completed += 1;
+      const queueSize = Math.max(absoluteUrls.length - completed, 0);
+
+      logger.info('crawl_progress', {
+        scanned_pages: completed,
+        queue_size: queueSize,
+        current_url: url,
+      });
+
       writeProgress(resultDir, {
         current: completed,
         total: absoluteUrls.length,
