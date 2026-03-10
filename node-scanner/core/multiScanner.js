@@ -325,7 +325,7 @@ if (!fs.existsSync(resultDir)) {
       ?? options.scan_concurrency
       ?? options.scanConcurrency
       ?? process.env.CRAWLER_CONCURRENCY,
-    4
+    8
   );
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
@@ -359,7 +359,7 @@ if (!fs.existsSync(resultDir)) {
       const requestUrl = req.url().toLowerCase();
       const isAnalyticsRequest = /google-analytics|googletagmanager|doubleclick|mixpanel|segment|hotjar|plausible|matomo/.test(requestUrl);
 
-      if (['image', 'font', 'media'].includes(type) || isAnalyticsRequest) {
+      if (['image', 'font', 'media', 'stylesheet'].includes(type) || isAnalyticsRequest) {
         req.abort();
       } else {
         req.continue();
@@ -436,13 +436,13 @@ if (!fs.existsSync(resultDir)) {
       return;
     }
 
-    const page = await browser.newPage();
-    await configurePage(page);
-
+    let page;
     const result = { url };
     let success = false;
 
     try {
+      page = await browser.newPage();
+      await configurePage(page);
       let currentExtraction = {
         title: '',
         h1: [],
@@ -655,7 +655,9 @@ if (!fs.existsSync(resultDir)) {
         status: progressStatus,
       });
 
-      await page.close();
+      if (page) {
+        await page.close();
+      }
     }
   };
 
