@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Crawl;
+use App\Models\CrawlEvent;
 use App\Models\CrawlPage;
 use App\Models\Report;
 use App\Models\Scan;
@@ -212,9 +213,15 @@ class RunScan implements ShouldQueue
                 continue;
             }
 
-            CrawlPage::create([
+            $normalizedUrl = $this->normalizeUrl((string) $crawlPage['url']);
+            if (!$normalizedUrl) {
+                continue;
+            }
+
+            CrawlPage::firstOrCreate([
                 'crawl_id' => $report->id,
-                'url' => $crawlPage['url'],
+                'url' => $normalizedUrl,
+            ], [
                 'status' => isset($crawlPage['status']) ? (string) $crawlPage['status'] : null,
                 'alt_count' => (int) ($crawlPage['alt_count'] ?? 0),
                 'heading_count' => (int) ($crawlPage['heading_count'] ?? 0),
@@ -269,32 +276,68 @@ class RunScan implements ShouldQueue
             return;
         }
 
+        $normalizedUrl = $this->normalizeUrl(isset($payload['url']) ? (string) $payload['url'] : null);
+        if (!$normalizedUrl) {
+            return;
+        }
+
         $eventPayload = [
             'type' => 'page_scanned',
-            'url' => $payload['url'] ?? null,
+            'url' => $normalizedUrl,
             'status' => $payload['status'] ?? null,
             'alt_count' => (int) ($payload['alt_count'] ?? 0),
             'heading_count' => (int) ($payload['heading_count'] ?? 0),
             'error' => $payload['error'] ?? null,
         ];
 
+        $crawlPage = CrawlPage::firstOrCreate([
+            'crawl_id' => $scanId,
+            'url' => $eventPayload['url'],
+        ], [
+            'status' => $eventPayload['status'],
+            'alt_count' => $eventPayload['alt_count'],
+            'heading_count' => $eventPayload['heading_count'],
+            'error' => $eventPayload['error'],
+            'created_at' => now(),
+        ]);
+
+        if (!$crawlPage->wasRecentlyCreated) {
+            return;
+        }
+
         File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
 
-        if (!empty($eventPayload['url'])) {
-            CrawlPage::create([
-                'crawl_id' => $scanId,
-                'url' => $eventPayload['url'],
-                'status' => $eventPayload['status'],
-                'alt_count' => $eventPayload['alt_count'],
-                'heading_count' => $eventPayload['heading_count'],
-                'error' => $eventPayload['error'],
-                'created_at' => now(),
-            ]);
+        CrawlEvent::create([
+            'crawl_id' => $scanId,
+            'type' => $eventPayload['type'],
+            'url' => $eventPayload['url'],
+            'status' => $eventPayload['status'],
+            'alt_count' => $eventPayload['alt_count'],
+            'heading_count' => $eventPayload['heading_count'],
+            'error' => $eventPayload['error'],
+            'created_at' => now(),
+        ]);
 
-            Crawl::whereKey($scanId)->update([
-                'pages_scanned' => CrawlPage::where('crawl_id', $scanId)->count(),
-            ]);
+        Crawl::whereKey($scanId)->update([
+            'pages_scanned' => CrawlPage::where('crawl_id', $scanId)->count(),
+        ]);
+    }
+
+    private function normalizeUrl(?string $url): ?string
+    {
+        if ($url === null) {
+            return null;
         }
+
+        $normalized = trim($url);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/#.*$/', '', $normalized) ?? $normalized;
+        $normalized = rtrim($normalized, '/');
+
+        return $normalized === '' ? null : $normalized;
     }
 
     private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
