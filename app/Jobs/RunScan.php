@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\Process\Process;
@@ -193,6 +194,31 @@ class RunScan implements ShouldQueue
         $reportPersistenceService->syncFromStorage($report->fresh());
     }
 
+    private function persistScanProgressEvent(string $scanId, array $payload): void
+    {
+        if (($payload['type'] ?? null) !== 'crawl_progress') {
+            return;
+        }
+
+        $directory = storage_path("scans/{$scanId}");
+        if (!File::exists($directory)) {
+            File::ensureDirectoryExists($directory);
+        }
+
+        $progressPayload = [
+            'type' => 'crawl_progress',
+            'status' => 'running',
+            'stage' => $payload['stage'] ?? 'scanning',
+            'current' => (int) ($payload['scanned_pages'] ?? 0),
+            'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+            'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
+            'queue_size' => (int) ($payload['queue_size'] ?? 0),
+            'current_url' => $payload['current_url'] ?? null,
+        ];
+
+        File::put($directory.'/progress.json', json_encode($progressPayload));
+    }
+
     private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
     {
         Log::info('[SCAN] Job gestartet', [
@@ -201,6 +227,18 @@ class RunScan implements ShouldQueue
         ]);
 
         $scan->update(['status' => 'running']);
+
+        Storage::makeDirectory("scans/{$scan->id}");
+        Storage::put("scans/{$scan->id}/progress.json", json_encode([
+            'type' => 'crawl_progress',
+            'status' => 'running',
+            'stage' => 'crawling',
+            'current' => 0,
+            'total' => (int) config('seo.max_pages', 20),
+            'scanned_pages' => 0,
+            'queue_size' => 0,
+            'current_url' => $scan->url,
+        ]));
 
         $options = [
             'scan_id' => $scan->id,
@@ -237,18 +275,31 @@ class RunScan implements ShouldQueue
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
         try {
             $process->run(function (string $type, string $buffer) use ($scan): void {
+                $trimmed = trim($buffer);
+
                 if ($type === Process::ERR) {
                     Log::error('[NODE STDERR]', [
                         'scan_id' => $scan->id,
-                        'output' => trim($buffer),
+                        'output' => $trimmed,
                     ]);
 
                     return;
                 }
 
+                foreach (preg_split('/\r?\n/', $trimmed) as $line) {
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    $payload = json_decode($line, true);
+                    if (is_array($payload) && ($payload['type'] ?? null) === 'crawl_progress') {
+                        $this->persistScanProgressEvent($scan->id, $payload);
+                    }
+                }
+
                 Log::debug('[NODE STDOUT]', [
                     'scan_id' => $scan->id,
-                    'output' => trim($buffer),
+                    'output' => $trimmed,
                 ]);
             });
         } catch (\Throwable $e) {

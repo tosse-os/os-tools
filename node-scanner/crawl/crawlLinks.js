@@ -54,6 +54,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
   const retryDelaySeconds = toPositiveInt(options.retry_delay ?? options.retryDelay, 10);
   const includeLinkGraph = options.include_link_graph === true || options.includeLinkGraph === true;
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
 
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
@@ -161,6 +162,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       current_url: url,
       current_depth: depth,
     });
+
+    if (onProgress) {
+      onProgress({
+        scanned_pages: visitedUrls.size,
+        queue_size: queue.length,
+        current_url: url,
+      });
+    }
 
     if (visitedIdentities.has(currentIdentity)) {
       incrementSkipped('already_visited');
