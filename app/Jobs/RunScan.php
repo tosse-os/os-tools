@@ -101,9 +101,10 @@ class RunScan implements ShouldQueue
             'max_pages' => config('seo.max_pages', 20),
             'max_depth' => config('seo.max_depth', 2),
             'page_timeout' => config('seo.page_timeout', 30),
-            'max_retries' => config('seo.max_retries', 3),
+            'max_retries' => min((int) config('seo.max_retries', 2), 2),
             'retry_delay' => config('seo.retry_delay', 10),
             'max_scan_time' => config('seo.max_scan_time', 300),
+            'concurrency' => (int) env('CRAWLER_CONCURRENCY', 6),
         ];
 
         $command = sprintf(
@@ -125,8 +126,11 @@ class RunScan implements ShouldQueue
             'command' => $process->getCommandLine(),
         ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
+        $stdoutBuffer = '';
+        $scanResult = null;
+
         try {
-            $process->run(function (string $type, string $buffer) use ($report): void {
+            $process->run(function (string $type, string $buffer) use ($report, &$stdoutBuffer, &$scanResult): void {
                 if ($type === Process::ERR) {
                     Log::error('[NODE STDERR]', [
                         'scan_id' => $report->id,
@@ -136,10 +140,31 @@ class RunScan implements ShouldQueue
                     return;
                 }
 
-                Log::debug('[NODE STDOUT]', [
-                    'scan_id' => $report->id,
-                    'output' => trim($buffer),
-                ]);
+                $stdoutBuffer .= $buffer;
+                $lines = preg_split('/\r?\n/', $stdoutBuffer) ?: [];
+                $stdoutBuffer = array_pop($lines) ?? '';
+
+                foreach ($lines as $line) {
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    $payload = json_decode($line, true);
+                    if (!is_array($payload)) {
+                        Log::debug('[NODE STDOUT]', [
+                            'scan_id' => $report->id,
+                            'output' => trim($line),
+                        ]);
+                        continue;
+                    }
+
+                    if (($payload['type'] ?? null) === 'scan_result' && is_array($payload['result'] ?? null)) {
+                        $scanResult = $payload['result'];
+                        continue;
+                    }
+
+                    $this->persistScanEvent($report->id, $payload);
+                }
             });
         } catch (\Throwable $e) {
             Log::error('[SCAN TRACE] node_process_exception', [
@@ -176,8 +201,7 @@ class RunScan implements ShouldQueue
             return;
         }
 
-        $payload = json_decode($process->getOutput(), true);
-        $firstResult = is_array($payload) && isset($payload[0]) && is_array($payload[0]) ? $payload[0] : null;
+        $firstResult = is_array($scanResult) ? $scanResult : null;
 
         if (!$firstResult) {
             Log::error('Crawler Report Scan lieferte kein Ergebnis', ['report_id' => $report->id]);
@@ -205,6 +229,8 @@ class RunScan implements ShouldQueue
             'total' => $pagesCrawled,
             'status' => 'done',
         ]));
+
+        CrawlPage::where('crawl_id', $report->id)->delete();
 
         $crawlPages = is_array($firstResult['link_graph_pages'] ?? null) ? $firstResult['link_graph_pages'] : [];
         foreach ($crawlPages as $crawlPage) {
@@ -236,7 +262,7 @@ class RunScan implements ShouldQueue
     private function persistScanEvent(string $scanId, array $payload): void
     {
         $eventType = $payload['type'] ?? null;
-        if (!in_array($eventType, ['crawl_progress', 'page_scanned'], true)) {
+        if (!in_array($eventType, ['crawl_progress', 'page_scanned', 'scan_finished'], true)) {
             return;
         }
 
@@ -264,6 +290,30 @@ class RunScan implements ShouldQueue
                 'pages_total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
                 'status' => $payload['status'] ?? 'running',
                 'finished_at' => in_array(($payload['status'] ?? ''), ['done', 'failed', 'aborted'], true) ? now() : null,
+            ]);
+
+            return;
+        }
+
+        if ($eventType === 'scan_finished') {
+            $status = (string) ($payload['status'] ?? 'done');
+
+            File::put($directory.'/progress.json', json_encode([
+                'type' => 'scan_finished',
+                'status' => $status,
+                'stage' => 'finished',
+                'current' => (int) ($payload['scanned_pages'] ?? 0),
+                'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
+                'queue_size' => (int) ($payload['queue_size'] ?? 0),
+                'current_url' => null,
+            ]));
+
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => (int) ($payload['scanned_pages'] ?? 0),
+                'pages_total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'status' => $status,
+                'finished_at' => now(),
             ]);
 
             return;
@@ -328,9 +378,10 @@ class RunScan implements ShouldQueue
             'max_depth' => config('seo.max_depth', 2),
             'page_timeout' => config('seo.page_timeout', 30),
             'max_parallel_pages' => (int) env('SCAN_CONCURRENCY', config('seo.max_parallel_pages', 8)),
-            'max_retries' => config('seo.max_retries', 3),
+            'max_retries' => min((int) config('seo.max_retries', 2), 2),
             'retry_delay' => config('seo.retry_delay', 10),
             'max_scan_time' => config('seo.max_scan_time', 300),
+            'concurrency' => (int) env('CRAWLER_CONCURRENCY', 6),
         ];
 
         $command = sprintf(
