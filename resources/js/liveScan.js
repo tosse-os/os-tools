@@ -21,27 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let pollingInterval = null;
   const renderedUrls = new Set();
 
-  const normalizeUrl = (value) => {
-    if (typeof value !== 'string') {
-      return null;
-    }
-
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const withoutFragment = trimmed.replace(/#.*$/, '');
-    const normalized = withoutFragment.replace(/\/+$/, '');
-
-    return normalized || null;
-  };
-
-
   const appendResultRow = ({ url, status, alt_count, heading_count, error }) => {
-    const normalizedUrl = normalizeUrl(url);
-
-    if (!normalizedUrl || renderedUrls.has(normalizedUrl)) {
+    if (!url || renderedUrls.has(url)) {
       return;
     }
 
@@ -50,7 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tr.innerHTML = `
       <td class="p-2">${currentIndex + 1}</td>
-      <td class="p-2 break-all"><a href="${normalizedUrl}" class="text-orange-600 hover:underline" target="_blank">${normalizedUrl}</a></td>
+      <td class="p-2 break-all"><a href="${url}" class="text-orange-600 hover:underline" target="_blank">${url}</a></td>
       <td class="p-2">${status ?? '–'}</td>
       <td class="p-2">${alt_count ?? 0}</td>
       <td class="p-2">${heading_count ?? 0}</td>
@@ -58,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
     tbody.appendChild(tr);
-    renderedUrls.add(normalizedUrl);
+    renderedUrls.add(url);
     currentIndex += 1;
   };
 
@@ -138,11 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (typeof progress.event_cursor === 'number') {
         eventCursor = progress.event_cursor;
-      } else if (Array.isArray(progress.events) && progress.events.length > 0) {
-        const fallbackCursor = progress.events[progress.events.length - 1]?.id;
-        if (typeof fallbackCursor === 'number') {
-          eventCursor = fallbackCursor;
-        }
       }
 
       if (progress.status === 'done' || progress.status === 'aborted' || progress.status === 'failed') {
