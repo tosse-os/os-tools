@@ -44,6 +44,11 @@
             Reports
           </a>
 
+          <a href="{{ route('crawls.index') }}"
+            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Crawls
+          </a>
+
           <a href="{{ route('logs.index') }}"
             class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Logs

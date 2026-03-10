@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Models\Crawl;
+use App\Models\CrawlPage;
 use App\Models\Report;
 use App\Models\Scan;
 use App\Services\IssueDetectionService;
@@ -88,6 +90,10 @@ class RunScan implements ShouldQueue
             'started_at' => now(),
         ]);
 
+        Crawl::whereKey($report->id)->update([
+            'status' => 'running',
+        ]);
+
         $options = [
             'scan_id' => $report->id,
             'url' => $report->url,
@@ -162,6 +168,11 @@ class RunScan implements ShouldQueue
                 'finished_at' => now(),
             ]);
 
+            Crawl::whereKey($report->id)->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+
             return;
         }
 
@@ -171,6 +182,10 @@ class RunScan implements ShouldQueue
         if (!$firstResult) {
             Log::error('Crawler Report Scan lieferte kein Ergebnis', ['report_id' => $report->id]);
             $report->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+            Crawl::whereKey($report->id)->update([
                 'status' => 'failed',
                 'finished_at' => now(),
             ]);
@@ -190,6 +205,30 @@ class RunScan implements ShouldQueue
             'total' => $pagesCrawled,
             'status' => 'done',
         ]));
+
+        $crawlPages = is_array($firstResult['link_graph_pages'] ?? null) ? $firstResult['link_graph_pages'] : [];
+        foreach ($crawlPages as $crawlPage) {
+            if (!is_array($crawlPage) || empty($crawlPage['url'])) {
+                continue;
+            }
+
+            CrawlPage::create([
+                'crawl_id' => $report->id,
+                'url' => $crawlPage['url'],
+                'status' => isset($crawlPage['status']) ? (string) $crawlPage['status'] : null,
+                'alt_count' => (int) ($crawlPage['alt_count'] ?? 0),
+                'heading_count' => (int) ($crawlPage['heading_count'] ?? 0),
+                'error' => $crawlPage['error'] ?? null,
+                'created_at' => now(),
+            ]);
+        }
+
+        Crawl::whereKey($report->id)->update([
+            'pages_scanned' => $pagesCrawled,
+            'pages_total' => $pagesCrawled,
+            'status' => 'done',
+            'finished_at' => now(),
+        ]);
 
         $reportPersistenceService->syncFromStorage($report->fresh());
     }
@@ -220,6 +259,13 @@ class RunScan implements ShouldQueue
 
             File::put($directory.'/progress.json', json_encode($progressPayload));
 
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => (int) ($payload['scanned_pages'] ?? 0),
+                'pages_total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'status' => $payload['status'] ?? 'running',
+                'finished_at' => in_array(($payload['status'] ?? ''), ['done', 'failed', 'aborted'], true) ? now() : null,
+            ]);
+
             return;
         }
 
@@ -233,6 +279,22 @@ class RunScan implements ShouldQueue
         ];
 
         File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
+
+        if (!empty($eventPayload['url'])) {
+            CrawlPage::create([
+                'crawl_id' => $scanId,
+                'url' => $eventPayload['url'],
+                'status' => $eventPayload['status'],
+                'alt_count' => $eventPayload['alt_count'],
+                'heading_count' => $eventPayload['heading_count'],
+                'error' => $eventPayload['error'],
+                'created_at' => now(),
+            ]);
+
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => CrawlPage::where('crawl_id', $scanId)->count(),
+            ]);
+        }
     }
 
     private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
@@ -243,6 +305,8 @@ class RunScan implements ShouldQueue
         ]);
 
         $scan->update(['status' => 'running']);
+
+        Crawl::whereKey($scan->id)->update(['status' => 'running']);
 
         Storage::makeDirectory("scans/{$scan->id}");
         Storage::put("scans/{$scan->id}/progress.json", json_encode([
@@ -355,6 +419,10 @@ class RunScan implements ShouldQueue
             ]);
 
             $scan->update(['status' => 'failed']);
+            Crawl::whereKey($scan->id)->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
             return;
         }
 
@@ -371,5 +439,10 @@ class RunScan implements ShouldQueue
         app(IssueDetectionService::class)->detectAndStoreForReport($report);
 
         $scan->update(['status' => 'done']);
+
+        Crawl::whereKey($scan->id)->update([
+            'status' => 'done',
+            'finished_at' => now(),
+        ]);
     }
 }

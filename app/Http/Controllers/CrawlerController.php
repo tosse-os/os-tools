@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\RunScan;
 use App\Models\Analysis;
+use App\Models\Crawl;
 use App\Models\Project;
 use App\Models\Report;
 use Illuminate\Http\Request;
@@ -36,6 +37,16 @@ class CrawlerController extends Controller
       'type' => 'crawler',
       'url' => $request->url,
       'status' => 'queued'
+    ]);
+
+    Crawl::create([
+      'id' => $report->id,
+      'domain' => parse_url($request->url, PHP_URL_HOST) ?: $request->url,
+      'start_url' => $request->url,
+      'status' => 'queued',
+      'pages_scanned' => 0,
+      'pages_total' => 0,
+      'created_at' => now(),
     ]);
 
     RunScan::dispatch($report->id, []);

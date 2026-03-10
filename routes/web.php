@@ -5,6 +5,7 @@ use App\Http\Controllers\CrawlerController;
 use App\Http\Controllers\LocalSeoController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\CrawlController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
 use App\Http\Controllers\ScanController;
@@ -49,6 +50,8 @@ Route::post('/multiscan/abort', [ScanController::class, 'abort']);
 
 Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
 Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
+Route::get('/crawls', [CrawlController::class, 'index'])->name('crawls.index');
+Route::get('/crawls/{crawl}', [CrawlController::class, 'show'])->name('crawls.show');
 
 
 /*

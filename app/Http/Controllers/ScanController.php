@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Scan;
+use App\Models\Crawl;
 use App\Jobs\RunScan;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +30,16 @@ class ScanController extends Controller
             'id' => (string) Str::uuid(),
             'url' => $request->url,
             'status' => 'queued'
+        ]);
+
+        Crawl::create([
+            'id' => $scan->id,
+            'domain' => parse_url($request->url, PHP_URL_HOST) ?: $request->url,
+            'start_url' => $request->url,
+            'status' => 'queued',
+            'pages_scanned' => 0,
+            'pages_total' => 0,
+            'created_at' => now(),
         ]);
 
         Log::debug('[SCAN TRACE] controller_start', [
@@ -143,29 +154,67 @@ class ScanController extends Controller
 
     public function index()
     {
-        $scans = Scan::latest()->get(); // später: ->where('user_id', auth()->id())
+        $scans = Scan::orderByDesc('created_at')->get();
         return view('scans.index', compact('scans'));
     }
+
     public function show(Scan $scan)
     {
-        return view('scans.show', compact('scan'));
+        $scanDirectory = storage_path("scans/{$scan->id}");
+
+        $resultFiles = [];
+        if (File::exists($scanDirectory)) {
+            $resultFiles = collect(File::glob($scanDirectory.'/*.json') ?: [])
+                ->filter(function ($file) {
+                    return preg_match('/\/\d+\.json$/', $file);
+                })
+                ->sortBy(function ($file) {
+                    return (int) basename($file, '.json');
+                })
+                ->values();
+        }
+
+        $results = [];
+        foreach ($resultFiles as $file) {
+            $json = json_decode(File::get($file), true);
+            if ($json) {
+                $results[] = $json;
+            }
+        }
+
+        return view('scans.show', compact('scan', 'results'));
     }
+
     public function abort(Request $request)
     {
-        $scanId = $request->input('scanId');
+        $request->validate([
+            'scanId' => 'required|uuid'
+        ]);
 
-        if (!$scanId) {
-            return response()->json(['error' => 'missing scanId'], 400);
-        }
+        $scan = Scan::findOrFail($request->scanId);
 
-        $path = base_path("node-scanner/storage/app/abort-{$scanId}.flag");
+        $scan->update([
+            'status' => 'aborted',
+            'finished_at' => now(),
+        ]);
 
-        if (!file_exists(dirname($path))) {
-            mkdir(dirname($path), 0777, true);
-        }
+        Crawl::whereKey($scan->id)->update([
+            'status' => 'aborted',
+            'finished_at' => now(),
+        ]);
 
-        file_put_contents($path, 'abort');
+        $scanDir = storage_path("scans/{$scan->id}");
+        File::put($scanDir.'/progress.json', json_encode([
+            'type' => 'crawl_progress',
+            'status' => 'aborted',
+            'stage' => 'aborted',
+            'current' => (int) $scan->current,
+            'total' => (int) $scan->total,
+            'scanned_pages' => (int) $scan->current,
+            'queue_size' => max((int) $scan->total - (int) $scan->current, 0),
+            'current_url' => null,
+        ]));
 
-        return response()->json(['status' => 'abort_requested']);
+        return response()->json(['ok' => true]);
     }
 }
