@@ -52,6 +52,7 @@ Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
 Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
 Route::get('/crawls', [CrawlController::class, 'index'])->name('crawls.index');
 Route::get('/crawls/{crawl}', [CrawlController::class, 'show'])->name('crawls.show');
+Route::post('/crawls/{crawl}/rerun', [CrawlController::class, 'rerun'])->name('crawls.rerun');
 
 
 /*
