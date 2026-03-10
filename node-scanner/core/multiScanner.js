@@ -5,14 +5,16 @@ const crawlLinks = require('../crawl/crawlLinks');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { createStructuredLogger } = require('../utils/structuredLogger');
 
 const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
+const rootLogger = createStructuredLogger({
+  logFilePath: logFile,
+  output: process.stderr,
+});
 
 function log(message) {
-  try {
-    fs.mkdirSync(path.dirname(logFile), { recursive: true });
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
-  } catch { }
+  rootLogger.info('scanner_message', { text: message });
 }
 
 function sleep(ms) {
@@ -264,7 +266,7 @@ let options;
 try {
   options = JSON.parse(process.argv[2]);
 } catch (err) {
-  log(`Scanner Options Fehler: ${err.message}`);
+  rootLogger.error('scan_error', { error: 'Ungültige Optionen', details: err.message });
   console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
   process.exit(1);
 }
@@ -277,6 +279,7 @@ if (!fs.existsSync(resultDir)) {
 }
 
 (async () => {
+  const logger = rootLogger.child({ scan_id: scanId });
   const checks = Array.isArray(options.checks) ? options.checks : [];
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 20);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
@@ -290,9 +293,14 @@ if (!fs.existsSync(resultDir)) {
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
 
-  log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
-  log(`[scanner] start | url=${options.url} | checks=${checks.join(',')} | max_pages=${maxPages} | max_depth=${maxDepth}`);
-  log(`Node scanner concurrency (max_parallel_pages): ${maxParallelPages}`);
+  logger.info('scan_started', {
+    url: options.url,
+    checks,
+    max_pages: maxPages,
+    max_depth: maxDepth,
+    max_parallel_pages: maxParallelPages,
+    max_scan_time: maxScanTimeSeconds,
+  });
   const previousResultsByUrl = loadPreviousResults(options);
 
   const browser = await puppeteer.launch({ headless: true });
@@ -319,13 +327,6 @@ if (!fs.existsSync(resultDir)) {
   let absoluteUrls = [];
 
   try {
-    console.log('[SCAN TRACE] scanner_start', {
-      scan_id: scanId,
-      url: options.url,
-      max_pages: options.max_pages,
-      max_depth: options.max_depth
-    });
-
     absoluteUrls = await crawlLinks(seedPage, options.url, {
       ...options,
       scan_id: scanId,
@@ -334,21 +335,20 @@ if (!fs.existsSync(resultDir)) {
       page_timeout: pageTimeoutSeconds,
       max_retries: maxRetries,
       retry_delay: retryDelaySeconds,
-      logger: (message) => log(`[scanner] ${message}`)
+      logger,
     });
 
-    console.log('[SCAN TRACE] crawl_result', {
-      scan_id: scanId,
+    logger.info('crawl_progress', {
       urls_found: absoluteUrls.length
     });
   } catch (err) {
-    log(`Fehler beim Crawlen der Startseite ${options.url}: ${err.message}`);
+    logger.error('scan_error', { url: options.url, error: err.message });
   } finally {
     await seedPage.close();
   }
 
   if (absoluteUrls.length === 1 && absoluteUrls[0] === options.url) {
-    console.warn('[SCAN WARNING] only seed url discovered');
+    logger.warn('crawl_progress', { url: options.url, warning: 'only_seed_url_discovered' });
   }
 
   if (absoluteUrls.length === 0) {
@@ -586,6 +586,10 @@ if (!fs.existsSync(resultDir)) {
 
   const scanTimeoutHandle = setTimeout(() => {
     failedByTimeout = true;
+    logger.error('scan_error', {
+      reason: 'max_scan_time_exceeded',
+      max_scan_time: maxScanTimeSeconds,
+    });
     log(`Scan fehlgeschlagen (max_scan_time überschritten): ${scanId}`);
   }, maxScanTimeMs);
 
@@ -608,6 +612,9 @@ if (!fs.existsSync(resultDir)) {
   }
 
   if (fs.existsSync(abortPath)) {
+    logger.warn('scan_error', {
+      reason: 'scan_aborted',
+    });
     log(`Scan abgebrochen: ${scanId}`);
     writeProgress(resultDir, {
       current: completed,
@@ -615,6 +622,9 @@ if (!fs.existsSync(resultDir)) {
       status: 'aborted'
     });
   } else if (failedByTimeout || hasExceededMaxScanTime()) {
+    logger.error('scan_error', {
+      reason: 'scan_failed',
+    });
     log(`Scan beendet mit Fehlerstatus: ${scanId}`);
     writeProgress(resultDir, {
       current: completed,
@@ -622,6 +632,10 @@ if (!fs.existsSync(resultDir)) {
       status: 'failed'
     });
   } else {
+    logger.info('scan_finished', {
+      pages_crawled: completed,
+      total: absoluteUrls.length,
+    });
     log(`Scan abgeschlossen: ${scanId}`);
     writeProgress(resultDir, {
       current: absoluteUrls.length,

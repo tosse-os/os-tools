@@ -2,7 +2,25 @@ const { URL } = require('url');
 const { normalizeUrl } = require('../utils/urlUtils');
 
 function createLogger(logger) {
-  return typeof logger === 'function' ? logger : () => {};
+  if (logger && typeof logger.info === 'function') {
+    return logger;
+  }
+
+  if (typeof logger === 'function') {
+    return {
+      error: logger,
+      warn: logger,
+      info: logger,
+      debug: logger,
+    };
+  }
+
+  return {
+    error: () => {},
+    warn: () => {},
+    info: () => {},
+    debug: () => {},
+  };
 }
 
 function sleep(ms) {
@@ -12,11 +30,6 @@ function sleep(ms) {
 function toPositiveInt(value, fallback) {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
-}
-
-function toPositiveMs(value, fallbackMs) {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? num : fallbackMs;
 }
 
 function getUrlIdentity(urlString) {
@@ -50,14 +63,12 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const normalizedStartUrl = normalizeUrl(startUrl) || startUrl;
   const scanId = options.scan_id ?? options.scanId ?? 'unknown';
 
-  console.log('[CRAWLER DEBUG] normalized_start_url', normalizedStartUrl);
-
-  log(
-    `[crawlLinks] scan started | start_url=${startUrl} | normalized_start_url=${normalizedStartUrl || 'invalid'} | max_pages=${maxPages} | max_depth=${maxDepth} | max_scan_time_ms=${maxScanTimeMs}`
-  );
-  console.log('[SCAN TRACE] crawl_initialized', {
+  log.info('crawl_initialized', {
     scan_id: scanId,
     startUrl: normalizedStartUrl || startUrl,
+    max_pages: maxPages,
+    max_depth: maxDepth,
+    max_scan_time_ms: maxScanTimeMs,
   });
 
   let startParsed;
@@ -140,34 +151,28 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     const currentIdentity = getUrlIdentity(url) || url.toLowerCase();
     queuedIdentities.delete(currentIdentity);
 
-    log(`[crawlLinks] current crawl depth | url=${url} | depth=${depth}`);
-    log(`[crawlLinks] current queue size | size=${queue.length}`);
-    log(`[crawlLinks] url crawled | url=${url} | depth=${depth}`);
-    console.log('[SCAN TRACE] crawl_loop_iteration', {
+    const skippedCounts = {};
+    const incrementSkipped = (reason) => {
+      skippedCounts[reason] = (skippedCounts[reason] || 0) + 1;
+    };
+
+    log.info('crawl_progress', {
       scan_id: scanId,
       queue: queue.length,
       visited: visitedUrls.size,
+      current_url: url,
+      current_depth: depth,
     });
-    console.log('[SCAN TRACE] crawl_queue_size', {
-      scan_id: scanId,
-      queue: queue.length,
-    });
-    console.log('[SCAN TRACE] crawl_visit', {
-      scan_id: scanId,
-      url,
-      depth,
-    });
-    console.log('[CRAWLER] visiting', url);
 
     if (visitedIdentities.has(currentIdentity)) {
-      log(`[crawlLinks] links rejected (duplicate) | url=${url} | reason=already_visited`);
-      console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'already_visited', url });
+      incrementSkipped('already_visited');
+      log.debug('crawl_link_skipped_summary', { scan_id: scanId, page_url: url, skipped_total: 1, skipped_reasons: skippedCounts });
       continue;
     }
 
     if (depth > maxDepth) {
-      log(`[crawlLinks] links rejected | url=${url} | reason=max_depth_exceeded | depth=${depth}`);
-      console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'max_depth_exceeded', url });
+      incrementSkipped('max_depth_exceeded');
+      log.debug('crawl_link_skipped_summary', { scan_id: scanId, page_url: url, skipped_total: 1, skipped_reasons: skippedCounts });
       continue;
     }
 
@@ -178,12 +183,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       try {
         try {
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeoutMs });
-          console.log('[SCAN TRACE] crawl_page_loaded', {
-            scan_id: scanId,
-            url,
-          });
         } catch (err) {
-          console.error('[CRAWLER] navigation error', err);
           throw err;
         }
 
@@ -206,20 +206,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
           }
         });
 
-        console.log('[SCAN TRACE] crawl_links_extracted', {
-          scan_id: scanId,
-          url,
-          count: links.length,
-        });
-        console.log('[CRAWLER] links extracted', links.length);
-
         success = true;
         break;
       } catch (error) {
-        log(
-          `[crawlLinks] links rejected | reason=page_load_failed | url=${url} | attempt=${attempt} | message=${error.message}`
-        );
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'page_load_failed', url });
+        incrementSkipped('page_load_failed');
+        log.warn('crawl_page_retry', {
+          scan_id: scanId,
+          url,
+          attempt,
+          max_retries: maxRetries,
+          error: error.message,
+        });
         if (attempt < maxRetries) {
           await sleep(retryDelayMs);
         }
@@ -227,6 +224,12 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
 
     if (!success) {
+      log.debug('crawl_link_skipped_summary', {
+        scan_id: scanId,
+        page_url: url,
+        skipped_total: Object.values(skippedCounts).reduce((acc, count) => acc + count, 0),
+        skipped_reasons: skippedCounts,
+      });
       continue;
     }
 
@@ -236,14 +239,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     ensureOutgoingSet(url);
 
     const nextDepth = depth + 1;
-    log(`[crawlLinks] links discovered | source=${url} | count=${links.length} | next_depth=${nextDepth}`);
-
     for (const rawLink of links) {
       const normalized = normalizeUrl(rawLink, url);
 
       if (!normalized) {
-        log(`[crawlLinks] links rejected | reason=normalization_failed | source=${url} | candidate=${rawLink}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'normalization_failed', url: rawLink });
+        incrementSkipped('normalization_failed');
         continue;
       }
 
@@ -251,15 +251,13 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       try {
         parsed = new URL(normalized);
       } catch {
-        log(`[crawlLinks] links rejected | reason=parse_failed | source=${url} | candidate=${normalized}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'parse_failed', url: normalized });
+        incrementSkipped('parse_failed');
         continue;
       }
 
       const isInternal = normalizeHost(parsed.hostname) === startHost;
       if (!isInternal) {
-        log(`[crawlLinks] links rejected (external) | source=${url} | link=${normalized}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'external', url: normalized });
+        incrementSkipped('external');
         continue;
       }
 
@@ -271,47 +269,49 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       }
 
       if (nextDepth > maxDepth) {
-        log(`[crawlLinks] links rejected | reason=max_depth_reached | link=${normalized} | next_depth=${nextDepth}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'max_depth_reached', url: normalized });
+        incrementSkipped('max_depth_reached');
         continue;
       }
 
-      console.log('[CRAWLER DEBUG] crawl_budget_check', {
-        visited: visitedUrls.size,
-        queue: queue.length,
-        maxPages,
-      });
-
       if (visitedUrls.size >= maxPages) {
-        log(`[crawlLinks] links rejected | reason=max_pages_budget | link=${normalized}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'max_pages_budget', url: normalized });
+        incrementSkipped('max_pages_budget');
         continue;
       }
 
       if (Date.now() - crawlStartedAt >= maxScanTimeMs) {
         stopReason = 'crawl budget reached (max scan time reached)';
-        log(`[crawlLinks] links rejected | reason=max_scan_time_reached | link=${normalized}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'max_scan_time_reached', url: normalized });
+        incrementSkipped('max_scan_time_reached');
         break;
       }
 
       const identity = getUrlIdentity(normalized) || normalized.toLowerCase();
 
       if (visitedIdentities.has(identity) || queuedIdentities.has(identity)) {
-        log(`[crawlLinks] links rejected (duplicate) | link=${normalized} | duplicate_key=${identity}`);
-        console.log('[SCAN TRACE] crawl_link_skipped', { scan_id: scanId, reason: 'duplicate', url: normalized });
+        incrementSkipped('duplicate');
         continue;
       }
 
       queue.push({ url: normalized, depth: nextDepth });
       queuedIdentities.add(identity);
-      console.log('[CRAWLER DEBUG] queue_size_after_push', queue.length);
-      log(`[crawlLinks] links accepted into crawl queue | url=${normalized} | depth=${nextDepth} | queue_size=${queue.length}`);
-      console.log('[SCAN TRACE] crawl_queue_push', {
+    }
+
+    log.info('page_crawled', {
+      scan_id: scanId,
+      url,
+      depth,
+      links_found: links.length,
+      queue_size: queue.length,
+      visited: visitedUrls.size,
+    });
+
+    const skippedTotal = Object.values(skippedCounts).reduce((acc, count) => acc + count, 0);
+    if (skippedTotal > 0) {
+      log.debug('crawl_link_skipped_summary', {
         scan_id: scanId,
-        url: normalized,
+        page_url: url,
+        skipped_total: skippedTotal,
+        skipped_reasons: skippedCounts,
       });
-      console.log('[CRAWLER] queue push', normalized);
     }
 
     if (stopReason === 'crawl budget reached (max scan time reached)') {
@@ -329,10 +329,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
   }
 
-  log(`[crawlLinks] scan stop | reason=${stopReason || 'completed'} | pages_crawled=${visitedUrls.size} | urls_discovered=${discoveredUrls.size}`);
-  console.log('[SCAN TRACE] crawl_finished', {
+  log.info('crawl_finished', {
     scan_id: scanId,
     pages_crawled: visitedUrls.size,
+    urls_discovered: discoveredUrls.size,
+    stop_reason: stopReason || 'completed',
   });
 
   const crawledUrls = Array.from(visitedUrls).slice(0, maxPages);
