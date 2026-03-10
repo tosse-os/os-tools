@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Scan;
-use App\Models\Crawl;
 use App\Jobs\RunScan;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\File;
+use App\Models\Crawl;
+use App\Models\CrawlEvent;
+use App\Models\Scan;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
-
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ScanController extends Controller
 {
@@ -65,48 +65,31 @@ class ScanController extends Controller
     {
         $scanDirectory = storage_path("scans/{$scan->id}");
         $path = $scanDirectory.'/progress.json';
-        $eventsPath = $scanDirectory.'/events.jsonl';
-        $eventCursor = (int) $request->query('event_cursor', 0);
-        $events = [];
+        $eventCursor = max((int) $request->query('event_cursor', 0), 0);
 
-        if (File::exists($eventsPath)) {
-            $lines = preg_split('/\r?\n/', trim(File::get($eventsPath)));
-            $lines = array_filter($lines, static fn ($line) => $line !== '');
-            $parsedEvents = array_map(static fn ($line) => json_decode($line, true), $lines);
-            $events = array_values(array_filter($parsedEvents, static fn ($event) => is_array($event)));
-        }
-
-        $resultFilePaths = File::exists($scanDirectory) ? (File::glob($scanDirectory.'/*.json') ?: []) : [];
-
-        $resultFiles = collect($resultFilePaths)
-            ->filter(static function (string $filePath): bool {
-                return preg_match('/\/\d+\.json$/', $filePath) === 1;
+        $newEvents = CrawlEvent::query()
+            ->where('crawl_id', $scan->id)
+            ->where('id', '>', $eventCursor)
+            ->orderBy('id')
+            ->get(['id', 'type', 'url', 'status', 'alt_count', 'heading_count', 'error'])
+            ->map(function (CrawlEvent $event): array {
+                return [
+                    'id' => $event->id,
+                    'type' => $event->type,
+                    'url' => $event->url,
+                    'status' => $event->status,
+                    'alt_count' => $event->alt_count,
+                    'heading_count' => $event->heading_count,
+                    'error' => $event->error,
+                ];
             })
-            ->sort(static function (string $left, string $right): int {
-                return (int) basename($left, '.json') <=> (int) basename($right, '.json');
-            })
-            ->values();
+            ->values()
+            ->all();
 
-        foreach ($resultFiles as $resultFile) {
-            $result = json_decode(File::get($resultFile), true);
-
-            if (!is_array($result)) {
-                continue;
-            }
-
-            $events[] = [
-                'type' => 'page_scanned',
-                'url' => $result['url'] ?? null,
-                'status' => $result['statusCheck']['status'] ?? null,
-                'alt_count' => $result['altCheck']['altMissing'] ?? 0,
-                'heading_count' => isset($result['headingCheck']['list']) && is_array($result['headingCheck']['list'])
-                    ? count($result['headingCheck']['list'])
-                    : 0,
-                'error' => $result['error'] ?? null,
-            ];
+        $latestCursor = $eventCursor;
+        if (!empty($newEvents)) {
+            $latestCursor = (int) end($newEvents)['id'];
         }
-
-        $newEvents = array_slice($events, max($eventCursor, 0));
 
         if (!File::exists($path)) {
             return response()->json([
@@ -119,7 +102,7 @@ class ScanController extends Controller
                 'queue_size' => 0,
                 'current_url' => null,
                 'events' => $newEvents,
-                'event_cursor' => count($events),
+                'event_cursor' => $latestCursor,
             ]);
         }
 
@@ -136,7 +119,7 @@ class ScanController extends Controller
             'queue_size' => $json['queue_size'] ?? max(($json['total'] ?? 0) - ($json['current'] ?? 0), 0),
             'current_url' => $json['current_url'] ?? null,
             'events' => $newEvents,
-            'event_cursor' => count($events),
+            'event_cursor' => $latestCursor,
         ]);
     }
 
