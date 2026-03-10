@@ -229,6 +229,7 @@ class RunScan implements ShouldQueue
             'status' => $payload['status'] ?? null,
             'alt_count' => (int) ($payload['alt_count'] ?? 0),
             'heading_count' => (int) ($payload['heading_count'] ?? 0),
+            'error' => $payload['error'] ?? null,
         ];
 
         File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
@@ -288,8 +289,10 @@ class RunScan implements ShouldQueue
             'command' => $process->getCommandLine(),
         ]);
         Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
+        $stdoutBuffer = '';
+
         try {
-            $process->run(function (string $type, string $buffer) use ($scan): void {
+            $process->run(function (string $type, string $buffer) use ($scan, &$stdoutBuffer): void {
                 $trimmed = trim($buffer);
 
                 if ($type === Process::ERR) {
@@ -301,7 +304,11 @@ class RunScan implements ShouldQueue
                     return;
                 }
 
-                foreach (preg_split('/\r?\n/', $trimmed) as $line) {
+                $stdoutBuffer .= $buffer;
+                $lines = preg_split('/\r?\n/', $stdoutBuffer) ?: [];
+                $stdoutBuffer = array_pop($lines) ?? '';
+
+                foreach ($lines as $line) {
                     if ($line === '') {
                         continue;
                     }
@@ -317,6 +324,14 @@ class RunScan implements ShouldQueue
                     'output' => $trimmed,
                 ]);
             });
+
+            $finalLine = trim($stdoutBuffer);
+            if ($finalLine !== '') {
+                $payload = json_decode($finalLine, true);
+                if (is_array($payload)) {
+                    $this->persistScanEvent($scan->id, $payload);
+                }
+            }
         } catch (\Throwable $e) {
             Log::error('[SCAN TRACE] node_process_exception', [
                 'scan_id' => $scan->id,

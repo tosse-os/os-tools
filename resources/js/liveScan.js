@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let pollingInterval = null;
   const renderedUrls = new Set();
 
-  const appendResultRow = ({ url, status, altCount, headingCount, error = '–' }) => {
+  const appendResultRow = ({ url, status, alt_count, heading_count, error }) => {
     if (!url || renderedUrls.has(url)) {
       return;
     }
@@ -33,9 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
       <td class="p-2">${currentIndex + 1}</td>
       <td class="p-2 break-all"><a href="${url}" class="text-orange-600 hover:underline" target="_blank">${url}</a></td>
       <td class="p-2">${status ?? '–'}</td>
-      <td class="p-2">${altCount ?? 0}</td>
-      <td class="p-2">${headingCount ?? 0}</td>
-      <td class="p-2 text-red-600">${error}</td>
+      <td class="p-2">${alt_count ?? 0}</td>
+      <td class="p-2">${heading_count ?? 0}</td>
+      <td class="p-2 text-red-600">${error ?? '–'}</td>
     `;
 
     tbody.appendChild(tr);
@@ -108,10 +108,11 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           appendResultRow({
-            url: event.url,
-            status: event.status,
-            altCount: event.alt_count,
-            headingCount: event.heading_count,
+            url: event?.url ?? null,
+            status: event?.status ?? null,
+            alt_count: event?.alt_count ?? null,
+            heading_count: event?.heading_count ?? null,
+            error: event?.error ?? null,
           });
         });
       }
