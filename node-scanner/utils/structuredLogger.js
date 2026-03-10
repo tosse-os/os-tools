@@ -16,11 +16,16 @@ function normalizeLevel(level) {
 function createStructuredLogger(options = {}) {
   const logLevel = normalizeLevel(options.level || process.env.SCAN_LOG_LEVEL || 'info');
   const logThreshold = LEVELS[logLevel];
-  const output = options.output || process.stderr;
+  const stdout = options.stdout || process.stdout;
+  const stderr = options.stderr || process.stderr;
   const logFilePath = options.logFilePath || path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
   const baseFields = options.baseFields || {};
 
-  const writeLine = (line) => {
+  const getOutputForLevel = (level) => (level === 'error' ? stderr : stdout);
+
+  const writeLine = (line, level) => {
+    const output = getOutputForLevel(level);
+
     if (output && typeof output.write === 'function') {
       output.write(`${line}\n`);
     }
@@ -41,12 +46,15 @@ function createStructuredLogger(options = {}) {
     const payload = {
       time: new Date().toISOString(),
       level,
-      message,
       ...baseFields,
       ...fields,
     };
 
-    writeLine(JSON.stringify(payload));
+    if (message !== undefined && message !== null && payload.type !== message) {
+      payload.message = message;
+    }
+
+    writeLine(JSON.stringify(payload), level);
   };
 
   const logger = {
@@ -57,7 +65,8 @@ function createStructuredLogger(options = {}) {
     child: (childFields = {}) =>
       createStructuredLogger({
         level: logLevel,
-        output,
+        stdout,
+        stderr,
         logFilePath,
         baseFields: {
           ...baseFields,
