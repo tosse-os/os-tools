@@ -19,6 +19,9 @@
     @forelse($project->analyses as $analysis)
       @php
         $latestReport = $analysis->reports->first();
+        $crawlerReports = $analysis->reports->where('type', 'crawler')->count();
+        $localSeoReports = $analysis->reports->where('type', 'local_seo')->count();
+        $seoReports = $analysis->reports->where('type', 'seo')->count();
       @endphp
 
       <a
@@ -29,6 +32,7 @@
             <div class="text-lg font-semibold text-gray-900">{{ $analysis->keyword ?: '—' }} • {{ $analysis->city ?: '—' }}</div>
             <div class="mt-2 text-sm text-gray-700">Score {{ is_numeric($latestReport?->score) ? number_format((float) $latestReport->score, 0) : '—' }}</div>
             <div class="text-sm text-gray-600">{{ $analysis->reports_count }} Reports</div>
+            <div class="mt-2 text-xs text-gray-500">Crawler Reports: {{ $crawlerReports }} • Local SEO Reports: {{ $localSeoReports }} • SEO Reports: {{ $seoReports }}</div>
           </div>
         </div>
       </a>

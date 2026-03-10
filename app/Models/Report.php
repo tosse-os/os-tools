@@ -16,6 +16,7 @@ class Report extends Model
         'id',
         'user_id',
         'analysis_id',
+        'project_id',
         'type',
         'url',
         'keyword',
@@ -51,5 +52,10 @@ class Report extends Model
     public function analysis()
     {
         return $this->belongsTo(Analysis::class);
+    }
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class);
     }
 }

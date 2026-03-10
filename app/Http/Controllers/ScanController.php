@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Analysis;
+use App\Models\Project;
+use App\Models\Report;
 use App\Models\Scan;
 use App\Jobs\RunScan;
 use Illuminate\Support\Str;
@@ -10,12 +13,11 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Config;
 
-
 class ScanController extends Controller
 {
     public function form()
     {
-        return view('multiscan.live');// /multiscan/live.blade.php
+        return view('multiscan.live');
     }
 
     public function start(Request $request)
@@ -25,29 +27,28 @@ class ScanController extends Controller
             'checks' => 'nullable|array'
         ]);
 
-        $scan = Scan::create([
+        $analysis = $this->findOrCreateAnalysis(auth()->id(), $request->url);
+
+        $report = Report::create([
             'id' => (string) Str::uuid(),
+            'user_id' => auth()->id(),
+            'analysis_id' => $analysis->id,
+            'project_id' => $analysis->project_id,
+            'type' => 'crawler',
             'url' => $request->url,
-            'status' => 'queued'
+            'status' => 'queued',
         ]);
 
-        Log::debug('[SCAN TRACE] controller_start', [
-            'scan_id' => $scan->id,
-            'url' => $request->url,
-            'checks' => $request->input('checks', []),
-        ]);
+        Scan::updateOrCreate(
+            ['id' => $report->id],
+            ['url' => $request->url, 'status' => 'queued']
+        );
 
-        Log::debug('[SCAN TRACE] dispatching_scan_job', [
-            'scan_id' => $scan->id,
-        ]);
+        Log::debug('[SCAN TRACE] dispatching_scan_job', ['scan_id' => $report->id]);
 
-        RunScan::dispatch($scan->id, $request->input('checks', []));
+        RunScan::dispatch($report->id, $request->input('checks', []), true);
 
-        Log::debug('[SCAN TRACE] job_dispatched', [
-            'scan_id' => $scan->id,
-        ]);
-
-        return response()->json(['scanId' => $scan->id]);
+        return response()->json(['scanId' => $report->id, 'reportId' => $report->id]);
     }
 
     public function progress(Scan $scan)
@@ -62,8 +63,7 @@ class ScanController extends Controller
             ]);
         }
 
-        $content = File::get($path);
-        $json = json_decode($content, true);
+        $json = json_decode(File::get($path), true);
 
         return response()->json([
             'status' => $json['status'] ?? 'running',
@@ -74,25 +74,27 @@ class ScanController extends Controller
 
     public function result(Scan $scan, $index)
     {
-        $file = storage_path("scans/{$scan->id}/{$index}.json");
+        $file = storage_path("scans/{$scan->id}/pages.json");
 
         if (!File::exists($file)) {
             return response()->json([]);
         }
 
-        $json = File::get($file);
-        return response()->json(json_decode($json, true));
+        $pages = json_decode(File::get($file), true);
+        return response()->json($pages[(int) $index] ?? []);
     }
 
     public function index()
     {
-        $scans = Scan::latest()->get(); // später: ->where('user_id', auth()->id())
+        $scans = Scan::latest()->get();
         return view('scans.index', compact('scans'));
     }
+
     public function show(Scan $scan)
     {
         return view('scans.show', compact('scan'));
     }
+
     public function abort(Request $request)
     {
         $scanId = $request->input('scanId');
@@ -110,5 +112,20 @@ class ScanController extends Controller
         file_put_contents($path, 'abort');
 
         return response()->json(['status' => 'abort_requested']);
+    }
+
+    private function findOrCreateAnalysis(?int $userId, string $url): Analysis
+    {
+        $domain = parse_url($url, PHP_URL_HOST) ?: $url;
+
+        $project = Project::firstOrCreate(
+            ['user_id' => $userId, 'domain' => $domain],
+            ['id' => (string) Str::uuid(), 'name' => $domain],
+        );
+
+        return Analysis::firstOrCreate(
+            ['project_id' => $project->id, 'url' => $url, 'keyword' => null, 'city' => null],
+            ['id' => (string) Str::uuid()],
+        );
     }
 }
