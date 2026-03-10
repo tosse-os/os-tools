@@ -428,11 +428,6 @@ class ReportController extends Controller
     if ($domain !== '') {
       $query->where('url', 'like', '%' . $domain . '%');
     }
-
-    $type = trim((string) $request->query('type', ''));
-    if ($type !== '' && in_array($type, ['crawler', 'local_seo', 'seo'], true)) {
-      $query->where('type', $type);
-    }
   }
 
   private function extractFilters(Request $request): array
@@ -441,7 +436,6 @@ class ReportController extends Controller
       'keyword' => trim((string) $request->query('keyword', '')),
       'city' => trim((string) $request->query('city', '')),
       'domain' => trim((string) $request->query('domain', '')),
-      'type' => trim((string) $request->query('type', '')),
     ];
   }
 

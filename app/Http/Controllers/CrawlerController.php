@@ -34,7 +34,6 @@ class CrawlerController extends Controller
       'user_id' => auth()->id(),
       'analysis_id' => $analysis->id,
       'type' => 'crawler',
-      'project_id' => $analysis->project_id,
       'url' => $request->url,
       'status' => 'queued'
     ]);
