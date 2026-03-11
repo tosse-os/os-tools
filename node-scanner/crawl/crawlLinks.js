@@ -1,4 +1,5 @@
 const { URL } = require('url');
+const crypto = require('crypto');
 const { normalizeUrl } = require('../utils/urlUtils');
 
 function createLogger(logger) {
@@ -101,6 +102,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const outgoingLinks = new Map();
   const incomingCounts = new Map();
+  const pageDetails = new Map();
 
   const crawlStartedAt = Date.now();
   let stopReason = null;
@@ -201,11 +203,108 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       try {
+        let response;
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (err) {
           throw err;
         }
+
+        const statusCode = response?.status() || null;
+        let pageData = {
+          title: null,
+          meta_description: null,
+          canonical: null,
+          h1_count: null,
+          heading_count: null,
+          image_count: null,
+          alt_missing_count: null,
+          internal_links: null,
+          external_links: null,
+          text: '',
+        };
+
+        try {
+          pageData = await page.evaluate(() => {
+            const title = document.title || null;
+
+            const metaDescription =
+              document.querySelector('meta[name="description"]')?.content || null;
+
+            const canonical =
+              document.querySelector('link[rel="canonical"]')?.href || null;
+
+            const h1 = document.querySelectorAll('h1').length;
+            const headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6').length;
+
+            const images = Array.from(document.querySelectorAll('img'));
+
+            const imageCount = images.length;
+
+            const missingAlt = images.filter((img) =>
+              !img.alt || img.alt.trim() === ''
+            ).length;
+
+            const links = Array.from(document.querySelectorAll('a[href]'));
+
+            const internalLinks = links.filter((link) => {
+              try {
+                return new URL(link.href).hostname === location.hostname;
+              } catch {
+                return false;
+              }
+            }).length;
+
+            const externalLinks = links.filter((link) => {
+              try {
+                return new URL(link.href).hostname !== location.hostname;
+              } catch {
+                return false;
+              }
+            }).length;
+
+            const text = document.body?.innerText || '';
+
+            return {
+              title,
+              meta_description: metaDescription,
+              canonical,
+              h1_count: h1,
+              heading_count: headings,
+              image_count: imageCount,
+              alt_missing_count: missingAlt,
+              internal_links: internalLinks,
+              external_links: externalLinks,
+              text,
+            };
+          });
+        } catch (analysisError) {
+          log.warn('crawl_page_analysis_failed', {
+            scan_id: scanId,
+            url,
+            attempt,
+            error: analysisError.message,
+          });
+        }
+
+        const textHash = crypto
+          .createHash('md5')
+          .update(pageData.text || '')
+          .digest('hex');
+
+        pageDetails.set(url, {
+          status_code: statusCode,
+          title: pageData.title,
+          meta_description: pageData.meta_description,
+          canonical: pageData.canonical,
+          h1_count: pageData.h1_count,
+          heading_count: pageData.heading_count,
+          image_count: pageData.image_count,
+          alt_missing_count: pageData.alt_missing_count,
+          internal_links: pageData.internal_links,
+          external_links: pageData.external_links,
+          text_hash: textHash,
+        });
 
         links = await page.$$eval('a[href]', (anchors) =>
           anchors
@@ -387,6 +486,17 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     depth: pageDepth[discoveredUrl],
     incoming_links: incomingLinksCount[discoveredUrl],
     outgoing_links: outgoingLinksCount[discoveredUrl],
+    status_code: pageDetails.get(discoveredUrl)?.status_code ?? null,
+    title: pageDetails.get(discoveredUrl)?.title ?? null,
+    meta_description: pageDetails.get(discoveredUrl)?.meta_description ?? null,
+    canonical: pageDetails.get(discoveredUrl)?.canonical ?? null,
+    h1_count: pageDetails.get(discoveredUrl)?.h1_count ?? null,
+    heading_count: pageDetails.get(discoveredUrl)?.heading_count ?? null,
+    image_count: pageDetails.get(discoveredUrl)?.image_count ?? null,
+    alt_missing_count: pageDetails.get(discoveredUrl)?.alt_missing_count ?? null,
+    internal_links: pageDetails.get(discoveredUrl)?.internal_links ?? null,
+    external_links: pageDetails.get(discoveredUrl)?.external_links ?? null,
+    text_hash: pageDetails.get(discoveredUrl)?.text_hash ?? null,
   }));
 
   const orphanPages = crawlSetUrls.filter(

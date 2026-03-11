@@ -27,10 +27,9 @@ $statusMeta = [
 $currentStatus = $statusMeta[$normalizedStatus];
 $showLoadingState = in_array($normalizedStatus, ['queued', 'processing'], true);
 $isCrawlerReport = $report->type === 'crawler';
-$pagesCrawled = (int) ($data['pages_crawled'] ?? 0);
-$crawlerPages = is_array($data['link_graph_pages'] ?? null) ? $data['link_graph_pages'] : [];
+$pagesCrawled = (int) (($crawlSummary['pages_crawled'] ?? null) ?? ($data['pages_crawled'] ?? 0));
+$crawlerPages = isset($crawlPages) ? $crawlPages : collect();
 $internalLinks = is_array($data['internal_links'] ?? null) ? $data['internal_links'] : [];
-$httpStatusCodes = is_array($data['http_status_codes'] ?? null) ? $data['http_status_codes'] : [];
 @endphp
 
 <div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
@@ -110,8 +109,8 @@ $httpStatusCodes = is_array($data['http_status_codes'] ?? null) ? $data['http_st
     <h2 class="text-xl font-semibold mb-4">Crawler Ergebnisse</h2>
     <div class="grid gap-3 sm:grid-cols-3 mb-4 text-sm">
       <div class="rounded border p-3"><strong>Pages crawled:</strong> {{ $pagesCrawled }}</div>
-      <div class="rounded border p-3"><strong>Discovered pages:</strong> {{ count($crawlerPages) }}</div>
-      <div class="rounded border p-3"><strong>Internal links:</strong> {{ count($internalLinks) }}</div>
+      <div class="rounded border p-3"><strong>Discovered pages:</strong> {{ $crawlerPages->count() }}</div>
+      <div class="rounded border p-3"><strong>Internal links:</strong> {{ $crawlSummary['internal_links'] ?? count($internalLinks) }}</div>
     </div>
 
     <div class="overflow-x-auto rounded border">
@@ -119,25 +118,31 @@ $httpStatusCodes = is_array($data['http_status_codes'] ?? null) ? $data['http_st
         <thead class="bg-gray-50">
           <tr>
             <th class="px-3 py-2 text-left">URL</th>
-            <th class="px-3 py-2 text-left">Page depth</th>
-            <th class="px-3 py-2 text-left">Internal links</th>
-            <th class="px-3 py-2 text-left">HTTP status</th>
+            <th class="px-3 py-2 text-left">Status</th>
+            <th class="px-3 py-2 text-left">Canonical</th>
+            <th class="px-3 py-2 text-left">H1</th>
+            <th class="px-3 py-2 text-left">Headings</th>
+            <th class="px-3 py-2 text-left">ALT missing</th>
+            <th class="px-3 py-2 text-left">Internal</th>
+            <th class="px-3 py-2 text-left">External</th>
+            <th class="px-3 py-2 text-left">Depth</th>
           </tr>
         </thead>
         <tbody>
           @forelse($crawlerPages as $crawlerPage)
-          @php
-          $pageUrl = $crawlerPage['url'] ?? '—';
-          $statusCode = $httpStatusCodes[$pageUrl] ?? ($pageUrl === $report->url ? ($data['statusCheck']['status'] ?? null) : null);
-          @endphp
           <tr class="border-t">
-            <td class="px-3 py-2 break-all">{{ $pageUrl }}</td>
-            <td class="px-3 py-2">{{ $crawlerPage['depth'] ?? '—' }}</td>
-            <td class="px-3 py-2">{{ $crawlerPage['outgoing_links'] ?? 0 }}</td>
-            <td class="px-3 py-2">{{ $statusCode ?? 'n/a' }}</td>
+            <td class="px-3 py-2 break-all">{{ $crawlerPage->url }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->status_code ?? 'n/a' }}</td>
+            <td class="px-3 py-2 break-all">{{ $crawlerPage->canonical ?? '—' }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->h1_count }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->heading_count }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->alt_missing_count }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->internal_links }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->external_links }}</td>
+            <td class="px-3 py-2">{{ $crawlerPage->depth }}</td>
           </tr>
           @empty
-          <tr class="border-t"><td colspan="4" class="px-3 py-4 text-gray-600">Keine Crawler-Daten verfügbar.</td></tr>
+          <tr class="border-t"><td colspan="9" class="px-3 py-4 text-gray-600">Keine Crawler-Daten verfügbar.</td></tr>
           @endforelse
         </tbody>
       </table>
