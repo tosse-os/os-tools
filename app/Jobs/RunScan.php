@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Crawl;
+use App\Models\CrawlLink;
 use App\Models\CrawlPage;
 use App\Models\Report;
 use App\Models\Scan;
@@ -232,6 +233,7 @@ class RunScan implements ShouldQueue
         ]));
 
         CrawlPage::where('crawl_id', $report->id)->delete();
+        CrawlLink::where('crawl_id', $report->id)->delete();
 
         $crawlPages = is_array($firstResult['link_graph_pages'] ?? null) ? $firstResult['link_graph_pages'] : [];
         foreach ($crawlPages as $crawlPage) {
@@ -242,10 +244,38 @@ class RunScan implements ShouldQueue
             CrawlPage::create([
                 'crawl_id' => $report->id,
                 'url' => $crawlPage['url'],
+                'canonical_url' => $crawlPage['canonical_url'] ?? null,
                 'status' => isset($crawlPage['status']) ? (string) $crawlPage['status'] : null,
                 'alt_count' => (int) ($crawlPage['alt_count'] ?? 0),
                 'heading_count' => (int) ($crawlPage['heading_count'] ?? 0),
                 'error' => $crawlPage['error'] ?? null,
+                'content_hash' => $crawlPage['content_hash'] ?? null,
+                'internal_links_in' => (int) ($crawlPage['internal_links_in'] ?? 0),
+                'internal_links_out' => (int) ($crawlPage['internal_links_out'] ?? 0),
+                'depth' => (int) ($crawlPage['depth'] ?? 0),
+                'created_at' => now(),
+            ]);
+        }
+
+        $crawlLinks = is_array($firstResult['crawl_links'] ?? null) ? $firstResult['crawl_links'] : [];
+        foreach ($crawlLinks as $crawlLink) {
+            if (!is_array($crawlLink) || empty($crawlLink['source_url']) || empty($crawlLink['target_url'])) {
+                continue;
+            }
+
+            CrawlLink::create([
+                'crawl_id' => $report->id,
+                'source_url' => $crawlLink['source_url'],
+                'target_url' => $crawlLink['target_url'],
+                'link_type' => in_array(($crawlLink['link_type'] ?? null), ['internal', 'external'], true)
+                    ? $crawlLink['link_type']
+                    : 'external',
+                'anchor_text' => $crawlLink['anchor_text'] ?? null,
+                'nofollow' => (bool) ($crawlLink['nofollow'] ?? false),
+                'status_code' => isset($crawlLink['status_code']) ? (int) $crawlLink['status_code'] : null,
+                'redirect_target' => $crawlLink['redirect_target'] ?? null,
+                'redirect_chain_length' => (int) ($crawlLink['redirect_chain_length'] ?? 0),
+                'redirect_chain' => is_array($crawlLink['redirect_chain'] ?? null) ? $crawlLink['redirect_chain'] : null,
                 'created_at' => now(),
             ]);
         }
