@@ -8,6 +8,8 @@ use App\Models\Crawl;
 use App\Models\Project;
 use App\Models\Report;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class CrawlController extends Controller
@@ -47,11 +49,20 @@ class CrawlController extends Controller
             'broken_pages' => (int) $crawl->pages()->where('status_code', '>=', 400)->count(),
         ];
 
+        $issuesByType = collect();
+        if (Schema::hasTable('crawl_issues')) {
+            $issuesByType = DB::table('crawl_issues')
+                ->where('crawl_id', $crawl->id)
+                ->selectRaw('type, COUNT(*) as total')
+                ->groupBy('type')
+                ->pluck('total', 'type');
+        }
+
         $issueReports = [
-            'missing_alt' => $crawl->pages()->where('alt_missing_count', '>', 0)->count(),
-            'missing_h1' => $crawl->pages()->where('h1_count', '=', 0)->count(),
-            'broken_links' => $summary['broken_links'],
-            'redirect_chains' => $crawl->links()->where('redirect_chain_length', '>', 1)->count(),
+            'missing_alt' => (int) ($issuesByType['missing_alt'] ?? $crawl->pages()->where('alt_missing_count', '>', 0)->count()),
+            'missing_h1' => (int) ($issuesByType['missing_h1'] ?? $crawl->pages()->where('h1_count', '=', 0)->count()),
+            'broken_links' => (int) ($issuesByType['broken_link'] ?? $summary['broken_links']),
+            'redirect_chains' => (int) ($issuesByType['redirect_chain'] ?? $crawl->links()->where('redirect_chain_length', '>', 1)->count()),
             'duplicate_pages' => $summary['duplicate_pages'],
             'orphan_pages' => $crawl->pages()->where('internal_links_in', 0)->where('depth', '>', 0)->count(),
         ];

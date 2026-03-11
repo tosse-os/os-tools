@@ -16,6 +16,8 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -234,14 +236,16 @@ class RunScan implements ShouldQueue
 
         CrawlPage::where('crawl_id', $report->id)->delete();
         CrawlLink::where('crawl_id', $report->id)->delete();
+        $this->resetCrawlIssues($report->id);
 
         $crawlPages = is_array($firstResult['link_graph_pages'] ?? null) ? $firstResult['link_graph_pages'] : [];
+        $storedPagesByUrl = [];
         foreach ($crawlPages as $crawlPage) {
             if (!is_array($crawlPage) || empty($crawlPage['url'])) {
                 continue;
             }
 
-            CrawlPage::create([
+            $storedPage = CrawlPage::create([
                 'crawl_id' => $report->id,
                 'url' => $crawlPage['url'],
                 'status' => isset($crawlPage['status']) ? (string) $crawlPage['status'] : null,
@@ -267,21 +271,32 @@ class RunScan implements ShouldQueue
                 'depth' => (int) ($crawlPage['depth'] ?? 0),
                 'created_at' => now(),
             ]);
+
+            $storedPagesByUrl[$storedPage->url] = $storedPage;
         }
 
         $crawlLinks = is_array($firstResult['crawl_links'] ?? null) ? $firstResult['crawl_links'] : [];
+        $baseHost = parse_url((string) $report->url, PHP_URL_HOST);
         foreach ($crawlLinks as $crawlLink) {
             if (!is_array($crawlLink) || empty($crawlLink['source_url']) || empty($crawlLink['target_url'])) {
                 continue;
             }
 
+            $sourceUrl = (string) $crawlLink['source_url'];
+            $targetUrl = (string) $crawlLink['target_url'];
+            $targetHost = parse_url($targetUrl, PHP_URL_HOST);
+
+            $isInternal = !empty($baseHost)
+                && !empty($targetHost)
+                && Str::lower((string) $targetHost) === Str::lower((string) $baseHost);
+
+            $sourcePageId = $storedPagesByUrl[$sourceUrl]->id ?? null;
+
             CrawlLink::create([
                 'crawl_id' => $report->id,
-                'source_url' => $crawlLink['source_url'],
-                'target_url' => $crawlLink['target_url'],
-                'link_type' => in_array(($crawlLink['link_type'] ?? null), ['internal', 'external'], true)
-                    ? $crawlLink['link_type']
-                    : 'external',
+                'source_url' => $sourceUrl,
+                'target_url' => $targetUrl,
+                'link_type' => $isInternal ? 'internal' : 'external',
                 'anchor_text' => $crawlLink['anchor_text'] ?? null,
                 'nofollow' => (bool) ($crawlLink['nofollow'] ?? false),
                 'status_code' => isset($crawlLink['status_code']) ? (int) $crawlLink['status_code'] : null,
@@ -290,7 +305,11 @@ class RunScan implements ShouldQueue
                 'redirect_chain' => is_array($crawlLink['redirect_chain'] ?? null) ? $crawlLink['redirect_chain'] : null,
                 'created_at' => now(),
             ]);
+
+            $this->storeCrawlLinkSourcePageId($report->id, $sourceUrl, $targetUrl, $sourcePageId);
         }
+
+        $this->persistCrawlIssues($report->id);
 
         Crawl::whereKey($report->id)->update([
             'pages_scanned' => $pagesCrawled,
@@ -300,6 +319,125 @@ class RunScan implements ShouldQueue
         ]);
 
         $reportPersistenceService->syncFromStorage($report->fresh());
+    }
+
+    private function resetCrawlIssues(string $crawlId): void
+    {
+        if (!Schema::hasTable('crawl_issues')) {
+            return;
+        }
+
+        DB::table('crawl_issues')->where('crawl_id', $crawlId)->delete();
+    }
+
+    private function storeCrawlLinkSourcePageId(string $crawlId, string $sourceUrl, string $targetUrl, ?int $sourcePageId): void
+    {
+        if ($sourcePageId === null || !Schema::hasTable('crawl_links') || !Schema::hasColumn('crawl_links', 'source_page_id')) {
+            return;
+        }
+
+        DB::table('crawl_links')
+            ->where('crawl_id', $crawlId)
+            ->where('source_url', $sourceUrl)
+            ->where('target_url', $targetUrl)
+            ->whereNull('source_page_id')
+            ->limit(1)
+            ->update(['source_page_id' => $sourcePageId]);
+    }
+
+    private function persistCrawlIssues(string $crawlId): void
+    {
+        if (!Schema::hasTable('crawl_issues')) {
+            return;
+        }
+
+        $issues = [];
+        $now = now();
+
+        $pages = CrawlPage::query()->where('crawl_id', $crawlId)->get(['id', 'url', 'h1_count', 'alt_missing_count']);
+        foreach ($pages as $page) {
+            if ((int) $page->alt_missing_count > 0) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'crawl_page_id' => $page->id,
+                    'type' => 'missing_alt',
+                    'url' => $page->url,
+                    'meta' => ['missing_alt_count' => (int) $page->alt_missing_count],
+                    'created_at' => $now,
+                ];
+            }
+
+            if ((int) $page->h1_count === 0) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'crawl_page_id' => $page->id,
+                    'type' => 'missing_h1',
+                    'url' => $page->url,
+                    'meta' => null,
+                    'created_at' => $now,
+                ];
+            }
+        }
+
+        $links = CrawlLink::query()
+            ->where('crawl_id', $crawlId)
+            ->get(['source_url', 'target_url', 'status_code', 'redirect_chain_length']);
+
+        foreach ($links as $link) {
+            if ((int) $link->status_code >= 400) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'type' => 'broken_link',
+                    'url' => $link->target_url,
+                    'meta' => [
+                        'source_url' => $link->source_url,
+                        'status_code' => (int) $link->status_code,
+                    ],
+                    'created_at' => $now,
+                ];
+            }
+
+            if ((int) $link->redirect_chain_length > 1) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'type' => 'redirect_chain',
+                    'url' => $link->target_url,
+                    'meta' => [
+                        'source_url' => $link->source_url,
+                        'redirect_chain_length' => (int) $link->redirect_chain_length,
+                    ],
+                    'created_at' => $now,
+                ];
+            }
+        }
+
+        if (empty($issues)) {
+            return;
+        }
+
+        $allowedColumns = array_flip(Schema::getColumnListing('crawl_issues'));
+        $payload = [];
+
+        foreach ($issues as $issue) {
+            $row = [];
+            foreach ($issue as $key => $value) {
+                if (!isset($allowedColumns[$key])) {
+                    continue;
+                }
+
+                $row[$key] = $key === 'meta' && $value !== null ? json_encode($value, JSON_UNESCAPED_SLASHES) : $value;
+            }
+
+            if (!isset($row['crawl_id'], $row['type'])) {
+                continue;
+            }
+
+            $payload[] = $row;
+        }
+
+        if (!empty($payload)) {
+            DB::table('crawl_issues')->insert($payload);
+        }
     }
 
     private function persistScanEvent(string $scanId, array $payload): void
