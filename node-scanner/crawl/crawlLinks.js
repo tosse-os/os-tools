@@ -1,5 +1,4 @@
 const { URL } = require('url');
-const crypto = require('crypto');
 const { normalizeUrl } = require('../utils/urlUtils');
 
 function createLogger(logger) {
@@ -91,6 +90,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   }
 
   const startHost = normalizeHost(startParsed.hostname);
+  const baseHost = startParsed.hostname;
 
   const visitedUrls = new Set();
   const queuedUrls = new Set();
@@ -101,7 +101,6 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const outgoingLinks = new Map();
   const incomingCounts = new Map();
-  const pageSeoMetrics = new Map();
 
   const crawlStartedAt = Date.now();
   let stopReason = null;
@@ -202,80 +201,29 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       try {
-        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        const statusCode = response ? response.status() : null;
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (err) {
+          throw err;
+        }
 
-        const pageData = await page.evaluate((crawlStartHost) => {
-          const normalizeBrowserHost = (hostname) => (hostname || '').toLowerCase().replace(/^www\./, '');
-          const isSkippableHref = (href) => !href
-            || href.startsWith('#')
-            || href.startsWith('mailto:')
-            || href.startsWith('tel:')
-            || href.startsWith('javascript:');
+        links = await page.$$eval('a[href]', (anchors) =>
+          anchors
+            .map((anchor) => anchor.href || anchor.getAttribute('href'))
+            .filter(Boolean)
+            .map((href) => href.trim())
+            .filter((href) => !href.startsWith('#'))
+            .filter((href) => !href.startsWith('mailto:'))
+            .filter((href) => !href.startsWith('tel:'))
+            .filter((href) => !href.startsWith('javascript:'))
+        );
 
-          const internalLinks = [];
-          let externalLinksCount = 0;
-
-          document.querySelectorAll('a[href]').forEach((anchor) => {
-            const rawHref = (anchor.getAttribute('href') || anchor.href || '').trim();
-            if (isSkippableHref(rawHref)) {
-              return;
-            }
-
-            let parsed;
-            try {
-              parsed = new URL(rawHref, document.baseURI);
-            } catch {
-              return;
-            }
-
-            if (normalizeBrowserHost(parsed.hostname) === crawlStartHost) {
-              internalLinks.push(parsed.href);
-            } else {
-              externalLinksCount += 1;
-            }
-          });
-
-          const title = document.title || null;
-          const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || null;
-          const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute('href') || null;
-          const images = Array.from(document.querySelectorAll('img'));
-          const imagesMissingAlt = images.filter((img) => (img.alt || '').trim() === '').length;
-
-          return {
-            title,
-            meta_description: metaDescription,
-            canonical,
-            h1_count: document.querySelectorAll('h1').length,
-            h2_count: document.querySelectorAll('h2').length,
-            h3_count: document.querySelectorAll('h3').length,
-            image_count: images.length,
-            images_missing_alt: imagesMissingAlt,
-            internal_links: internalLinks,
-            internal_links_count: internalLinks.length,
-            external_links_count: externalLinksCount,
-            text_content: document.body?.innerText || '',
-          };
-        }, startHost);
-
-        const textHash = crypto.createHash('md5').update(pageData.text_content).digest('hex');
-        links = pageData.internal_links;
-
-        pageSeoMetrics.set(url, {
-          url,
-          depth,
-          status_code: statusCode,
-          title: pageData.title,
-          meta_description: pageData.meta_description,
-          canonical: pageData.canonical,
-          h1_count: pageData.h1_count,
-          h2_count: pageData.h2_count,
-          h3_count: pageData.h3_count,
-          image_count: pageData.image_count,
-          images_missing_alt: pageData.images_missing_alt,
-          internal_links_count: pageData.internal_links_count,
-          external_links_count: pageData.external_links_count,
-          text_hash: textHash,
+        links = links.filter((link) => {
+          try {
+            return new URL(link).hostname === baseHost;
+          } catch {
+            return false;
+          }
         });
 
         success = true;
@@ -434,28 +382,12 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
   }
 
-  const pages = crawlSetUrls.map((discoveredUrl) => {
-    const seoMetrics = pageSeoMetrics.get(discoveredUrl);
-
-    return {
-      url: discoveredUrl,
-      depth: pageDepth[discoveredUrl],
-      incoming_links: incomingLinksCount[discoveredUrl],
-      outgoing_links: outgoingLinksCount[discoveredUrl],
-      status_code: seoMetrics ? seoMetrics.status_code : null,
-      title: seoMetrics ? seoMetrics.title : null,
-      meta_description: seoMetrics ? seoMetrics.meta_description : null,
-      canonical: seoMetrics ? seoMetrics.canonical : null,
-      h1_count: seoMetrics ? seoMetrics.h1_count : null,
-      h2_count: seoMetrics ? seoMetrics.h2_count : null,
-      h3_count: seoMetrics ? seoMetrics.h3_count : null,
-      image_count: seoMetrics ? seoMetrics.image_count : null,
-      images_missing_alt: seoMetrics ? seoMetrics.images_missing_alt : null,
-      internal_links_count: seoMetrics ? seoMetrics.internal_links_count : null,
-      external_links_count: seoMetrics ? seoMetrics.external_links_count : null,
-      text_hash: seoMetrics ? seoMetrics.text_hash : null,
-    };
-  });
+  const pages = crawlSetUrls.map((discoveredUrl) => ({
+    url: discoveredUrl,
+    depth: pageDepth[discoveredUrl],
+    incoming_links: incomingLinksCount[discoveredUrl],
+    outgoing_links: outgoingLinksCount[discoveredUrl],
+  }));
 
   const orphanPages = crawlSetUrls.filter(
     (discoveredUrl) => discoveredUrl !== normalizedStartUrl && (incomingLinksCount[discoveredUrl] || 0) === 0
