@@ -70,43 +70,26 @@ class ScanController extends Controller
         $events = [];
 
         if (File::exists($eventsPath)) {
-            $lines = preg_split('/\r?\n/', trim(File::get($eventsPath)));
-            $lines = array_filter($lines, static fn ($line) => $line !== '');
-            $parsedEvents = array_map(static fn ($line) => json_decode($line, true), $lines);
-            $events = array_values(array_filter($parsedEvents, static fn ($event) => is_array($event)));
-        }
+            $lines = preg_split('/\r?\n/', File::get($eventsPath));
 
-        $resultFilePaths = File::exists($scanDirectory) ? (File::glob($scanDirectory.'/*.json') ?: []) : [];
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
 
-        $resultFiles = collect($resultFilePaths)
-            ->filter(static function (string $filePath): bool {
-                return preg_match('/\/\d+\.json$/', $filePath) === 1;
-            })
-            ->sort(static function (string $left, string $right): int {
-                return (int) basename($left, '.json') <=> (int) basename($right, '.json');
-            })
-            ->values();
+                if ($line === '') {
+                    continue;
+                }
 
-        foreach ($resultFiles as $resultFile) {
-            $result = json_decode(File::get($resultFile), true);
-
-            if (!is_array($result)) {
-                continue;
+                $event = json_decode($line, true);
+                if (is_array($event)) {
+                    $events[] = $event;
+                }
             }
-
-            $events[] = [
-                'type' => 'page_scanned',
-                'url' => $result['url'] ?? null,
-                'status' => $result['statusCheck']['status'] ?? null,
-                'alt_count' => $result['altCheck']['altMissing'] ?? 0,
-                'heading_count' => isset($result['headingCheck']['list']) && is_array($result['headingCheck']['list'])
-                    ? count($result['headingCheck']['list'])
-                    : 0,
-                'error' => $result['error'] ?? null,
-            ];
         }
 
-        $newEvents = array_slice($events, max($eventCursor, 0));
+        $safeCursor = max($eventCursor, 0);
+        $newEvents = $safeCursor >= count($events)
+            ? []
+            : array_slice($events, $safeCursor);
 
         if (!File::exists($path)) {
             return response()->json([

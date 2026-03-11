@@ -18,7 +18,12 @@ function isTrackingParam(key) {
 
 function normalizeUrl(raw, base = '') {
   try {
-    const url = new URL(raw, base);
+    const candidate = String(raw || '').trim();
+    if (!candidate) {
+      return null;
+    }
+
+    const url = new URL(candidate, base);
 
     url.hash = '';
 
@@ -44,7 +49,7 @@ function normalizeUrl(raw, base = '') {
 
     return url.href.replace(/\/$/, '');
   } catch {
-    return raw;
+    return null;
   }
 }
 

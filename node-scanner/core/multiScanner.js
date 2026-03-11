@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { createStructuredLogger } = require('../utils/structuredLogger');
+const { normalizeUrl } = require('../utils/urlUtils');
 
 const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 const rootLogger = createStructuredLogger({
@@ -326,7 +327,7 @@ if (!fs.existsSync(resultDir)) {
       ?? options.scan_concurrency
       ?? options.scanConcurrency
       ?? process.env.CRAWLER_CONCURRENCY,
-    8
+    6
   );
   const pageTimeoutSeconds = toPositiveInt(options.page_timeout ?? options.pageTimeout, 30);
   const maxRetries = toPositiveInt(options.max_retries ?? options.maxRetries, 3);
@@ -360,7 +361,7 @@ if (!fs.existsSync(resultDir)) {
       const requestUrl = req.url().toLowerCase();
       const isAnalyticsRequest = /google-analytics|googletagmanager|doubleclick|mixpanel|segment|hotjar|plausible|matomo/.test(requestUrl);
 
-      if (['image', 'font', 'media', 'stylesheet'].includes(type) || isAnalyticsRequest) {
+      if (['image', 'font', 'media'].includes(type) || isAnalyticsRequest) {
         req.abort();
       } else {
         req.continue();
@@ -409,12 +410,28 @@ if (!fs.existsSync(resultDir)) {
     log(`[scanner] crawl returned no urls | seed=${options.url}`);
   }
 
-  if (!absoluteUrls.includes(options.url) && absoluteUrls.length < maxPages) {
-    log(`[scanner] seed url injected into queue | url=${options.url}`);
-    absoluteUrls.unshift(options.url);
+  const normalizedSeedUrl = normalizeUrl(options.url) || options.url;
+
+  if (!absoluteUrls.includes(normalizedSeedUrl) && absoluteUrls.length < maxPages) {
+    log(`[scanner] seed url injected into queue | url=${normalizedSeedUrl}`);
+    absoluteUrls.unshift(normalizedSeedUrl);
   }
 
-  absoluteUrls = absoluteUrls.slice(0, maxPages);
+  const normalizedQueuedUrls = new Set();
+  const deduplicatedUrls = [];
+
+  for (const discoveredUrl of absoluteUrls) {
+    const normalized = normalizeUrl(discoveredUrl, options.url);
+
+    if (!normalized || normalizedQueuedUrls.has(normalized)) {
+      continue;
+    }
+
+    normalizedQueuedUrls.add(normalized);
+    deduplicatedUrls.push(normalized);
+  }
+
+  absoluteUrls = deduplicatedUrls.slice(0, maxPages);
 
   log(`URLs gefunden: ${absoluteUrls.length}`);
 
@@ -431,6 +448,7 @@ if (!fs.existsSync(resultDir)) {
 
   let completed = 0;
   let failedByTimeout = false;
+  const emittedPageScannedUrls = new Set();
 
   const runTask = async ({ url, position }) => {
     if (fs.existsSync(abortPath) || hasExceededMaxScanTime()) {
@@ -633,14 +651,19 @@ if (!fs.existsSync(resultDir)) {
     } finally {
       fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
 
-      publishPageScanned({
-        logger,
-        url,
-        status: result.statusCheck?.status ?? null,
-        altCount: result.altCheck?.altMissing ?? 0,
-        headingCount: Array.isArray(result.headingCheck?.list) ? result.headingCheck.list.length : 0,
-        error: result.error ?? null,
-      });
+      const normalizedResultUrl = normalizeUrl(url, options.url) || url;
+      if (!emittedPageScannedUrls.has(normalizedResultUrl)) {
+        emittedPageScannedUrls.add(normalizedResultUrl);
+
+        publishPageScanned({
+          logger,
+          url: normalizedResultUrl,
+          status: result.statusCheck?.status ?? null,
+          altCount: result.altCheck?.altMissing ?? 0,
+          headingCount: Array.isArray(result.headingCheck?.list) ? result.headingCheck.list.length : 0,
+          error: result.error ?? null,
+        });
+      }
 
       completed += 1;
       const queueSize = Math.max(absoluteUrls.length - completed, 0);
@@ -658,7 +681,11 @@ if (!fs.existsSync(resultDir)) {
       });
 
       if (page) {
-        await page.close();
+        try {
+          await page.close();
+        } catch (closeError) {
+          logger.warn('page_close_failed', { url, error: closeError.message });
+        }
       }
     }
   };

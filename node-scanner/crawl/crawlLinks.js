@@ -32,15 +32,6 @@ function toPositiveInt(value, fallback) {
   return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
 }
 
-function getUrlIdentity(urlString) {
-  try {
-    const parsed = new URL(urlString);
-    const identity = `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}`;
-    return identity.toLowerCase();
-  } catch {
-    return null;
-  }
-}
 
 function normalizeHost(hostname) {
   return (hostname || '').toLowerCase().replace(/^www\./, '');
@@ -102,12 +93,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
   const baseHost = startParsed.hostname;
 
   const visitedUrls = new Set();
-  const visitedIdentities = new Set();
-  const queuedIdentities = new Set();
+  const queuedUrls = new Set();
   const discoveredUrls = new Set([normalizedStartUrl]);
   const depthByUrl = new Map([[normalizedStartUrl, 0]]);
   const queue = [{ url: normalizedStartUrl, depth: 0 }];
-  queuedIdentities.add(getUrlIdentity(normalizedStartUrl) || normalizedStartUrl.toLowerCase());
+  queuedUrls.add(normalizedStartUrl);
 
   const outgoingLinks = new Map();
   const incomingCounts = new Map();
@@ -158,8 +148,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
 
     const { url, depth } = next;
-    const currentIdentity = getUrlIdentity(url) || url.toLowerCase();
-    queuedIdentities.delete(currentIdentity);
+    queuedUrls.delete(url);
 
     const skippedCounts = {};
     const incrementSkipped = (reason) => {
@@ -182,7 +171,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
       });
     }
 
-    if (visitedIdentities.has(currentIdentity)) {
+    if (visitedUrls.has(url)) {
       incrementSkipped('already_visited');
       log.debug('crawl_link_skipped_summary', { scan_id: scanId, page_url: url, skipped_total: 1, skipped_reasons: skippedCounts });
       continue;
@@ -265,7 +254,6 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     }
 
     visitedUrls.add(url);
-    visitedIdentities.add(currentIdentity);
     ensureIncomingCount(url);
     ensureOutgoingSet(url);
 
@@ -320,15 +308,13 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
         break;
       }
 
-      const identity = getUrlIdentity(normalized) || normalized.toLowerCase();
-
-      if (visitedIdentities.has(identity) || queuedIdentities.has(identity)) {
+      if (visitedUrls.has(normalized) || queuedUrls.has(normalized)) {
         incrementSkipped('duplicate');
         continue;
       }
 
       queue.push({ url: normalized, depth: nextDepth });
-      queuedIdentities.add(identity);
+      queuedUrls.add(normalized);
     }
 
     log.info('page_crawled', {
