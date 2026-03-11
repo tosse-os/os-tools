@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\RunScan;
+use App\Jobs\RunCrawlPipeline;
 use App\Models\Analysis;
 use App\Models\Crawl;
 use App\Models\Project;
@@ -57,14 +57,15 @@ class CrawlController extends Controller
         Crawl::create([
             'id' => $report->id,
             'domain' => parse_url($crawl->start_url, PHP_URL_HOST) ?: $crawl->start_url,
-            'start_url' => $crawl->start_url,
+            'root_url' => $crawl->root_url ?: $crawl->start_url,
+            'start_url' => $crawl->root_url ?: $crawl->start_url,
             'status' => 'queued',
+            'pages_discovered' => 0,
             'pages_scanned' => 0,
-            'pages_total' => 0,
-            'created_at' => now(),
+            'pages_failed' => 0,
         ]);
 
-        RunScan::dispatch($report->id, []);
+        RunCrawlPipeline::dispatch($report->id);
 
         return redirect()
             ->route('crawls.show', $report->id)

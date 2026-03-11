@@ -11,21 +11,25 @@ class Crawl extends Model
 
     public $incrementing = false;
     protected $keyType = 'string';
-    public $timestamps = false;
 
     protected $fillable = [
         'id',
         'domain',
+        'root_url',
         'start_url',
         'status',
+        'pages_discovered',
         'pages_scanned',
+        'pages_failed',
         'pages_total',
-        'created_at',
+        'started_at',
         'finished_at',
     ];
 
     protected $casts = [
+        'started_at' => 'datetime',
         'created_at' => 'datetime',
+        'updated_at' => 'datetime',
         'finished_at' => 'datetime',
     ];
 
