@@ -1,4 +1,5 @@
 const { URL } = require('url');
+const crypto = require('crypto');
 const { normalizeUrl } = require('../utils/urlUtils');
 
 function createLogger(logger) {
@@ -101,6 +102,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
   const outgoingLinks = new Map();
   const incomingCounts = new Map();
+  const pageDetails = new Map();
 
   const crawlStartedAt = Date.now();
   let stopReason = null;
@@ -201,11 +203,112 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       try {
+        let response;
         try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (err) {
           throw err;
         }
+
+        const statusCode = response?.status() || null;
+        let pageData = {
+          title: null,
+          meta_description: null,
+          canonical: null,
+          h1_count: null,
+          h2_count: null,
+          h3_count: null,
+          image_count: null,
+          images_missing_alt: null,
+          internal_links_count: null,
+          external_links_count: null,
+          text_content: '',
+        };
+
+        try {
+          pageData = await page.evaluate(() => {
+            const title = document.title || null;
+
+            const metaDescription =
+              document.querySelector('meta[name="description"]')?.content || null;
+
+            const canonical =
+              document.querySelector('link[rel="canonical"]')?.href || null;
+
+            const h1Count = document.querySelectorAll('h1').length;
+            const h2Count = document.querySelectorAll('h2').length;
+            const h3Count = document.querySelectorAll('h3').length;
+
+            const images = Array.from(document.querySelectorAll('img'));
+
+            const imageCount = images.length;
+
+            const imagesMissingAlt = images.filter((img) =>
+              !img.alt || img.alt.trim() === ''
+            ).length;
+
+            const links = Array.from(document.querySelectorAll('a[href]'));
+
+            const internalLinks = links.filter((link) => {
+              try {
+                return new URL(link.href).hostname === location.hostname;
+              } catch {
+                return false;
+              }
+            }).length;
+
+            const externalLinks = links.filter((link) => {
+              try {
+                return new URL(link.href).hostname !== location.hostname;
+              } catch {
+                return false;
+              }
+            }).length;
+
+            const textContent = document.body?.innerText || '';
+
+            return {
+              title,
+              meta_description: metaDescription,
+              canonical,
+              h1_count: h1Count,
+              h2_count: h2Count,
+              h3_count: h3Count,
+              image_count: imageCount,
+              images_missing_alt: imagesMissingAlt,
+              internal_links_count: internalLinks,
+              external_links_count: externalLinks,
+              text_content: textContent,
+            };
+          });
+        } catch (analysisError) {
+          log.warn('crawl_page_analysis_failed', {
+            scan_id: scanId,
+            url,
+            attempt,
+            error: analysisError.message,
+          });
+        }
+
+        const textHash = crypto
+          .createHash('md5')
+          .update(pageData.text_content || '')
+          .digest('hex');
+
+        pageDetails.set(url, {
+          status_code: statusCode,
+          title: pageData.title,
+          meta_description: pageData.meta_description,
+          canonical: pageData.canonical,
+          h1_count: pageData.h1_count,
+          h2_count: pageData.h2_count,
+          h3_count: pageData.h3_count,
+          image_count: pageData.image_count,
+          images_missing_alt: pageData.images_missing_alt,
+          internal_links_count: pageData.internal_links_count,
+          external_links_count: pageData.external_links_count,
+          text_hash: textHash,
+        });
 
         links = await page.$$eval('a[href]', (anchors) =>
           anchors
@@ -387,6 +490,18 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     depth: pageDepth[discoveredUrl],
     incoming_links: incomingLinksCount[discoveredUrl],
     outgoing_links: outgoingLinksCount[discoveredUrl],
+    status_code: pageDetails.get(discoveredUrl)?.status_code ?? null,
+    title: pageDetails.get(discoveredUrl)?.title ?? null,
+    meta_description: pageDetails.get(discoveredUrl)?.meta_description ?? null,
+    canonical: pageDetails.get(discoveredUrl)?.canonical ?? null,
+    h1_count: pageDetails.get(discoveredUrl)?.h1_count ?? null,
+    h2_count: pageDetails.get(discoveredUrl)?.h2_count ?? null,
+    h3_count: pageDetails.get(discoveredUrl)?.h3_count ?? null,
+    image_count: pageDetails.get(discoveredUrl)?.image_count ?? null,
+    images_missing_alt: pageDetails.get(discoveredUrl)?.images_missing_alt ?? null,
+    internal_links_count: pageDetails.get(discoveredUrl)?.internal_links_count ?? null,
+    external_links_count: pageDetails.get(discoveredUrl)?.external_links_count ?? null,
+    text_hash: pageDetails.get(discoveredUrl)?.text_hash ?? null,
   }));
 
   const orphanPages = crawlSetUrls.filter(
