@@ -36,17 +36,20 @@ class CrawlController extends Controller
             'broken_links' => (int) $crawl->links()->where('status_code', '>=', 400)->count(),
             'redirects' => (int) $crawl->links()->whereIn('status_code', [301, 302, 307, 308])->count(),
             'duplicate_pages' => (int) $crawl->pages()
-                ->select('content_hash')
-                ->whereNotNull('content_hash')
-                ->groupBy('content_hash')
+                ->selectRaw('COALESCE(text_hash, content_hash) as duplicate_hash')
+                ->where(function ($query) {
+                    $query->whereNotNull('text_hash')->orWhereNotNull('content_hash');
+                })
+                ->groupBy('duplicate_hash')
                 ->havingRaw('COUNT(*) > 1')
                 ->get()
                 ->count(),
+            'broken_pages' => (int) $crawl->pages()->where('status_code', '>=', 400)->count(),
         ];
 
         $issueReports = [
-            'missing_alt' => $crawl->pages()->where('alt_count', '>', 0)->count(),
-            'missing_h1' => $crawl->pages()->where('heading_count', '=', 0)->count(),
+            'missing_alt' => $crawl->pages()->where('alt_missing_count', '>', 0)->count(),
+            'missing_h1' => $crawl->pages()->where('h1_count', '=', 0)->count(),
             'broken_links' => $summary['broken_links'],
             'redirect_chains' => $crawl->links()->where('redirect_chain_length', '>', 1)->count(),
             'duplicate_pages' => $summary['duplicate_pages'],
