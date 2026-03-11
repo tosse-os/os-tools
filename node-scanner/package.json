@@ -10,7 +10,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "puppeteer": "^24.14.0",
-    "ioredis": "^5.4.1"
+    "puppeteer": "^24.14.0"
   }
 }
