@@ -216,13 +216,12 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
           meta_description: null,
           canonical: null,
           h1_count: null,
-          h2_count: null,
-          h3_count: null,
+          heading_count: null,
           image_count: null,
-          images_missing_alt: null,
-          internal_links_count: null,
-          external_links_count: null,
-          text_content: '',
+          alt_missing_count: null,
+          internal_links: null,
+          external_links: null,
+          text: '',
         };
 
         try {
@@ -235,15 +234,14 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
             const canonical =
               document.querySelector('link[rel="canonical"]')?.href || null;
 
-            const h1Count = document.querySelectorAll('h1').length;
-            const h2Count = document.querySelectorAll('h2').length;
-            const h3Count = document.querySelectorAll('h3').length;
+            const h1 = document.querySelectorAll('h1').length;
+            const headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6').length;
 
             const images = Array.from(document.querySelectorAll('img'));
 
             const imageCount = images.length;
 
-            const imagesMissingAlt = images.filter((img) =>
+            const missingAlt = images.filter((img) =>
               !img.alt || img.alt.trim() === ''
             ).length;
 
@@ -265,20 +263,19 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
               }
             }).length;
 
-            const textContent = document.body?.innerText || '';
+            const text = document.body?.innerText || '';
 
             return {
               title,
               meta_description: metaDescription,
               canonical,
-              h1_count: h1Count,
-              h2_count: h2Count,
-              h3_count: h3Count,
+              h1_count: h1,
+              heading_count: headings,
               image_count: imageCount,
-              images_missing_alt: imagesMissingAlt,
-              internal_links_count: internalLinks,
-              external_links_count: externalLinks,
-              text_content: textContent,
+              alt_missing_count: missingAlt,
+              internal_links: internalLinks,
+              external_links: externalLinks,
+              text,
             };
           });
         } catch (analysisError) {
@@ -292,7 +289,7 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
 
         const textHash = crypto
           .createHash('md5')
-          .update(pageData.text_content || '')
+          .update(pageData.text || '')
           .digest('hex');
 
         pageDetails.set(url, {
@@ -301,12 +298,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
           meta_description: pageData.meta_description,
           canonical: pageData.canonical,
           h1_count: pageData.h1_count,
-          h2_count: pageData.h2_count,
-          h3_count: pageData.h3_count,
+          heading_count: pageData.heading_count,
           image_count: pageData.image_count,
-          images_missing_alt: pageData.images_missing_alt,
-          internal_links_count: pageData.internal_links_count,
-          external_links_count: pageData.external_links_count,
+          alt_missing_count: pageData.alt_missing_count,
+          internal_links: pageData.internal_links,
+          external_links: pageData.external_links,
           text_hash: textHash,
         });
 
@@ -495,12 +491,11 @@ module.exports = async function crawlLinks(page, startUrl, options = {}) {
     meta_description: pageDetails.get(discoveredUrl)?.meta_description ?? null,
     canonical: pageDetails.get(discoveredUrl)?.canonical ?? null,
     h1_count: pageDetails.get(discoveredUrl)?.h1_count ?? null,
-    h2_count: pageDetails.get(discoveredUrl)?.h2_count ?? null,
-    h3_count: pageDetails.get(discoveredUrl)?.h3_count ?? null,
+    heading_count: pageDetails.get(discoveredUrl)?.heading_count ?? null,
     image_count: pageDetails.get(discoveredUrl)?.image_count ?? null,
-    images_missing_alt: pageDetails.get(discoveredUrl)?.images_missing_alt ?? null,
-    internal_links_count: pageDetails.get(discoveredUrl)?.internal_links_count ?? null,
-    external_links_count: pageDetails.get(discoveredUrl)?.external_links_count ?? null,
+    alt_missing_count: pageDetails.get(discoveredUrl)?.alt_missing_count ?? null,
+    internal_links: pageDetails.get(discoveredUrl)?.internal_links ?? null,
+    external_links: pageDetails.get(discoveredUrl)?.external_links ?? null,
     text_hash: pageDetails.get(discoveredUrl)?.text_hash ?? null,
   }));
 

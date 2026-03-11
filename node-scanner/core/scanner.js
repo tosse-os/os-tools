@@ -220,15 +220,27 @@ try {
         type: 'page_scanned',
         url,
         status: null,
+        status_code: null,
+        title: null,
+        meta_description: null,
+        canonical: null,
+        h1_count: 0,
         alt_count: 0,
+        alt_missing_count: 0,
         heading_count: 0,
+        image_count: 0,
+        internal_links: 0,
+        external_links: 0,
         error: null,
         canonical_url: null,
         content_hash: null,
+        text_hash: null,
       };
 
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout * 1000 });
+        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout * 1000 });
+        pageResult.status_code = response?.status() || null;
+        pageResult.status = pageResult.status_code !== null ? String(pageResult.status_code) : null;
 
         if (checks.includes('status')) {
           const statusResult = await statusCheck(page, url);
@@ -249,7 +261,20 @@ try {
             : Number(headingResult?.count ?? 0);
         }
 
-        const { links, canonicalUrl, cleanedContent } = await page.evaluate(() => {
+        const {
+          links,
+          canonicalUrl,
+          cleanedContent,
+          title,
+          metaDescription,
+          h1Count,
+          headingCount,
+          imageCount,
+          missingAlt,
+          internalLinks,
+          externalLinks,
+          textContent,
+        } = await page.evaluate(() => {
           const anchors = Array.from(document.querySelectorAll('a[href]'));
           const linkData = anchors
             .map((anchor) => {
@@ -276,6 +301,27 @@ try {
 
           const canonicalElement = document.querySelector('link[rel="canonical"]');
           const canonicalHref = canonicalElement ? (canonicalElement.getAttribute('href') || '').trim() : null;
+          const titleText = document.title || null;
+          const metaDesc = document.querySelector('meta[name="description"]')?.content || null;
+          const h1 = document.querySelectorAll('h1').length;
+          const headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6').length;
+          const images = Array.from(document.querySelectorAll('img'));
+          const missingAltCount = images.filter((img) => !img.alt || img.alt.trim() === '').length;
+          const internalCount = linkData.filter((link) => {
+            try {
+              return new URL(link.href, location.href).hostname === location.hostname;
+            } catch {
+              return false;
+            }
+          }).length;
+          const externalCount = linkData.filter((link) => {
+            try {
+              return new URL(link.href, location.href).hostname !== location.hostname;
+            } catch {
+              return false;
+            }
+          }).length;
+          const text = document.body?.innerText || '';
 
           const clone = document.documentElement.cloneNode(true);
           clone.querySelectorAll('script, style, noscript').forEach((node) => node.remove());
@@ -284,11 +330,31 @@ try {
             links: linkData,
             canonicalUrl: canonicalHref || null,
             cleanedContent: clone.outerHTML || '',
+            title: titleText,
+            metaDescription: metaDesc,
+            h1Count: h1,
+            headingCount: headings,
+            imageCount: images.length,
+            missingAlt: missingAltCount,
+            internalLinks: internalCount,
+            externalLinks: externalCount,
+            textContent: text,
           };
         });
 
+        pageResult.title = title;
+        pageResult.meta_description = metaDescription;
+        pageResult.h1_count = Number(h1Count || 0);
+        pageResult.heading_count = Number(headingCount || 0);
+        pageResult.image_count = Number(imageCount || 0);
+        pageResult.alt_missing_count = Number(missingAlt || 0);
+        pageResult.alt_count = pageResult.alt_missing_count;
+        pageResult.internal_links = Number(internalLinks || 0);
+        pageResult.external_links = Number(externalLinks || 0);
+        pageResult.canonical = normalizeUrl(canonicalUrl, url) || null;
         pageResult.canonical_url = normalizeUrl(canonicalUrl, url) || null;
         pageResult.content_hash = hashContent(cleanedContent);
+        pageResult.text_hash = crypto.createHash('md5').update(textContent || '').digest('hex');
 
         for (const linkData of links) {
           const rawLink = linkData.href;
@@ -419,12 +485,22 @@ try {
     const pages = pageResults.map((entry) => ({
       url: entry.url,
       status: entry.status,
+      status_code: entry.status_code,
+      title: entry.title,
+      meta_description: entry.meta_description,
+      canonical: entry.canonical,
+      h1_count: entry.h1_count,
       alt_count: entry.alt_count,
+      alt_missing_count: entry.alt_missing_count,
       heading_count: entry.heading_count,
+      image_count: entry.image_count,
+      internal_links: entry.internal_links,
+      external_links: entry.external_links,
       error: entry.error,
       depth: entry.depth,
       canonical_url: entry.canonical_url,
       content_hash: entry.content_hash,
+      text_hash: entry.text_hash,
       internal_links_in: incomingCounts.get(entry.url) || 0,
       internal_links_out: outgoingCounts.get(entry.url) || 0,
       outgoing_links: linkGraph.has(entry.url) ? linkGraph.get(entry.url).size : 0,

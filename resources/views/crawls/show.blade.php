@@ -31,6 +31,7 @@
     <div class="rounded border p-3 bg-white"><strong>Broken links:</strong> {{ $summary['broken_links'] }}</div>
     <div class="rounded border p-3 bg-white"><strong>Redirects:</strong> {{ $summary['redirects'] }}</div>
     <div class="rounded border p-3 bg-white"><strong>Duplicate pages:</strong> {{ $summary['duplicate_pages'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Broken pages:</strong> {{ $summary['broken_pages'] }}</div>
   </div>
 
   <div class="rounded border bg-white p-4">
@@ -50,11 +51,11 @@
       <thead class="bg-gray-50 text-left text-gray-600">
         <tr>
           <th class="px-4 py-3 font-medium">URL</th>
-          <th class="px-4 py-3 font-medium">Status</th>
+          <th class="px-4 py-3 font-medium">Status Code</th>
           <th class="px-4 py-3 font-medium">Canonical</th>
           <th class="px-4 py-3 font-medium">Depth</th>
-          <th class="px-4 py-3 font-medium">Internal In</th>
-          <th class="px-4 py-3 font-medium">Internal Out</th>
+          <th class="px-4 py-3 font-medium">Internal Links</th>
+          <th class="px-4 py-3 font-medium">External Links</th>
           <th class="px-4 py-3 font-medium">ALT count</th>
           <th class="px-4 py-3 font-medium">Heading count</th>
           <th class="px-4 py-3 font-medium">Errors</th>
@@ -64,12 +65,12 @@
         @forelse($pages as $page)
           <tr>
             <td class="px-4 py-3 break-all text-gray-900">{{ $page->url }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->status ?? '—' }}</td>
-            <td class="px-4 py-3 break-all text-gray-700">{{ $page->canonical_url ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->status_code ?? $page->status ?? '—' }}</td>
+            <td class="px-4 py-3 break-all text-gray-700">{{ $page->canonical ?? $page->canonical_url ?? '—' }}</td>
             <td class="px-4 py-3 text-gray-700">{{ $page->depth }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links_in }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links_out }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->alt_count }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->external_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->alt_missing_count ?? $page->alt_count }}</td>
             <td class="px-4 py-3 text-gray-700">{{ $page->heading_count }}</td>
             <td class="px-4 py-3 text-red-600">{{ $page->error ?? '—' }}</td>
           </tr>
