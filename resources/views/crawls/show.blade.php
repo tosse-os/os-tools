@@ -5,7 +5,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-semibold">Crawl details</h1>
-      <p class="text-sm text-gray-600">{{ $crawl->start_url }}</p>
+      <p class="text-sm text-gray-600">{{ $crawl->root_url ?: $crawl->start_url }}</p>
     </div>
     <div class="flex items-center gap-4">
       <form method="POST" action="{{ route('crawls.rerun', $crawl) }}">
@@ -21,7 +21,7 @@
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
     <div class="rounded border p-3 bg-white"><strong>Domain:</strong> {{ $crawl->domain }}</div>
     <div class="rounded border p-3 bg-white"><strong>Status:</strong> {{ $crawl->status }}</div>
-    <div class="rounded border p-3 bg-white"><strong>Pages scanned:</strong> {{ $crawl->pages_scanned }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Pages scanned:</strong> {{ $crawl->pages_scanned }} / {{ $crawl->pages_discovered }}</div>
   </div>
 
   <div class="rounded-lg bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
@@ -29,24 +29,26 @@
       <thead class="bg-gray-50 text-left text-gray-600">
         <tr>
           <th class="px-4 py-3 font-medium">URL</th>
-          <th class="px-4 py-3 font-medium">Status</th>
-          <th class="px-4 py-3 font-medium">ALT count</th>
-          <th class="px-4 py-3 font-medium">Heading count</th>
-          <th class="px-4 py-3 font-medium">Errors</th>
+          <th class="px-4 py-3 font-medium">HTTP</th>
+          <th class="px-4 py-3 font-medium">Depth</th>
+          <th class="px-4 py-3 font-medium">H1</th>
+          <th class="px-4 py-3 font-medium">Alt missing</th>
+          <th class="px-4 py-3 font-medium">Links (int/ext)</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         @forelse($pages as $page)
           <tr>
             <td class="px-4 py-3 break-all text-gray-900">{{ $page->url }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->status ?? '—' }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->alt_count }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->heading_count }}</td>
-            <td class="px-4 py-3 text-red-600">{{ $page->error ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->status_code ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->depth }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->h1_count }}</td>
+            <td class="px-4 py-3 text-red-600">{{ $page->alt_missing_count }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links_count }}/{{ $page->external_links_count }}</td>
           </tr>
         @empty
           <tr>
-            <td colspan="5" class="px-4 py-6 text-center text-gray-500">No crawl pages stored.</td>
+            <td colspan="6" class="px-4 py-6 text-center text-gray-500">No crawl pages stored.</td>
           </tr>
         @endforelse
       </tbody>

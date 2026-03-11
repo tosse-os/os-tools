@@ -56,10 +56,11 @@ class RunScan implements ShouldQueue
         ]);
 
         if ($report) {
-            Log::debug('[SCAN TRACE] executing_report_scan', [
+            Log::debug('[SCAN TRACE] forwarding_to_crawl_pipeline', [
                 'scan_id' => $this->scanId,
             ]);
-            $this->runCrawlerReportScan($report, $reportPersistenceService);
+            RunCrawlPipeline::dispatch($report->id);
+            return;
         } elseif ($scan) {
             Log::debug('[SCAN TRACE] executing_multi_scan', [
                 'scan_id' => $this->scanId,
