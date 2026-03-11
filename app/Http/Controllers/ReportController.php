@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CrawlLink;
+use App\Models\CrawlPage;
 use App\Models\Report;
 use Illuminate\Http\Request;
 
@@ -199,6 +201,41 @@ class ReportController extends Controller
       ->values()
       ->all();
 
+    $crawlPages = collect();
+    $crawlSummary = [
+      'pages_crawled' => 0,
+      'internal_links' => 0,
+      'external_links' => 0,
+    ];
+
+    if ($report->type === 'crawler') {
+      $crawlPages = CrawlPage::query()
+        ->where('crawl_id', $report->id)
+        ->orderBy('depth')
+        ->orderBy('url')
+        ->get([
+          'url',
+          'depth',
+          'status_code',
+          'canonical',
+          'title',
+          'meta_description',
+          'h1_count',
+          'heading_count',
+          'image_count',
+          'alt_missing_count',
+          'internal_links',
+          'external_links',
+          'text_hash',
+        ]);
+
+      $crawlSummary = [
+        'pages_crawled' => $crawlPages->count(),
+        'internal_links' => CrawlLink::where('crawl_id', $report->id)->where('link_type', 'internal')->count(),
+        'external_links' => CrawlLink::where('crawl_id', $report->id)->where('link_type', 'external')->count(),
+      ];
+    }
+
     return view('reports.show', [
       'report' => $report,
       'timeline' => $timeline,
@@ -207,6 +244,8 @@ class ReportController extends Controller
       'insights' => $insights,
       'issuesSummary' => $issuesSummary,
       'issueTypeSummary' => $issueTypeSummary,
+      'crawlPages' => $crawlPages,
+      'crawlSummary' => $crawlSummary,
     ]);
   }
 
