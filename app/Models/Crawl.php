@@ -11,21 +11,27 @@ class Crawl extends Model
 
     public $incrementing = false;
     protected $keyType = 'string';
-    public $timestamps = false;
 
     protected $fillable = [
         'id',
-        'domain',
+        'root_url',
         'start_url',
+        'domain',
         'status',
+        'pages_discovered',
         'pages_scanned',
+        'pages_failed',
         'pages_total',
-        'created_at',
+        'started_at',
         'finished_at',
+        'created_at',
+        'updated_at',
     ];
 
     protected $casts = [
+        'started_at' => 'datetime',
         'created_at' => 'datetime',
+        'updated_at' => 'datetime',
         'finished_at' => 'datetime',
     ];
 
@@ -37,5 +43,10 @@ class Crawl extends Model
     public function links()
     {
         return $this->hasMany(CrawlLink::class);
+    }
+
+    public function getEntryUrlAttribute(): string
+    {
+        return $this->root_url ?: $this->start_url;
     }
 }

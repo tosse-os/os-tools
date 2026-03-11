@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\RunScan;
+use App\Jobs\RunCrawl;
 use App\Models\Analysis;
 use App\Models\Crawl;
 use App\Models\Project;
@@ -32,9 +32,9 @@ class CrawlController extends Controller
             ->paginate(100);
 
         $summary = [
-            'pages_crawled' => (int) $crawl->pages()->count(),
-            'internal_links' => (int) $crawl->links()->where('link_type', 'internal')->count(),
-            'external_links' => (int) $crawl->links()->where('link_type', 'external')->count(),
+            'pages_crawled' => (int) ($crawl->pages_scanned + $crawl->pages_failed),
+            'internal_links' => (int) $crawl->links()->where('type', 'internal')->count(),
+            'external_links' => (int) $crawl->links()->where('type', 'external')->count(),
             'broken_links' => (int) $crawl->links()->where('status_code', '>=', 400)->count(),
             'redirects' => (int) $crawl->links()->whereIn('status_code', [301, 302, 307, 308])->count(),
             'duplicate_pages' => (int) $crawl->pages()
@@ -102,7 +102,7 @@ class CrawlController extends Controller
     {
         $analysis = $this->findOrCreateAnalysis(
             auth()->id(),
-            $crawl->start_url,
+            $crawl->entry_url,
             null,
             null,
         );
@@ -112,21 +112,22 @@ class CrawlController extends Controller
             'user_id' => auth()->id(),
             'analysis_id' => $analysis->id,
             'type' => 'crawler',
-            'url' => $crawl->start_url,
+            'url' => $crawl->entry_url,
             'status' => 'queued',
         ]);
 
         Crawl::create([
             'id' => $report->id,
-            'domain' => parse_url($crawl->start_url, PHP_URL_HOST) ?: $crawl->start_url,
-            'start_url' => $crawl->start_url,
+            'domain' => parse_url($crawl->entry_url, PHP_URL_HOST) ?: $crawl->entry_url,
+            'root_url' => $crawl->entry_url,
+            'start_url' => $crawl->entry_url,
             'status' => 'queued',
+            'pages_discovered' => 1,
             'pages_scanned' => 0,
-            'pages_total' => 0,
-            'created_at' => now(),
+            'pages_failed' => 0,
         ]);
 
-        RunScan::dispatch($report->id, []);
+        RunCrawl::dispatch($report->id);
 
         return redirect()
             ->route('crawls.show', $report->id)

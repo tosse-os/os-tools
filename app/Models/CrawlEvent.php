@@ -5,28 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class CrawlLink extends Model
+class CrawlEvent extends Model
 {
     use HasFactory;
 
+    public $timestamps = false;
+
     protected $fillable = [
         'crawl_id',
-        'source_url',
-        'target_url',
         'type',
-        'status_code',
-        'redirect_chain_length',
+        'payload',
         'created_at',
-        'updated_at',
     ];
 
     protected $casts = [
+        'payload' => 'array',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime',
     ];
-
-    public function crawl()
-    {
-        return $this->belongsTo(Crawl::class);
-    }
 }
