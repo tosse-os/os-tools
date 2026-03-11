@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class CrawlPage extends Model
+class CrawlLink extends Model
 {
     use HasFactory;
 
@@ -14,24 +14,24 @@ class CrawlPage extends Model
 
     protected $fillable = [
         'crawl_id',
-        'url',
-        'canonical_url',
-        'status',
-        'alt_count',
-        'heading_count',
-        'error',
-        'content_hash',
-        'internal_links_in',
-        'internal_links_out',
-        'depth',
+        'source_url',
+        'target_url',
+        'link_type',
+        'anchor_text',
+        'nofollow',
+        'status_code',
+        'redirect_target',
+        'redirect_chain_length',
+        'redirect_chain',
         'created_at',
     ];
 
     protected $casts = [
+        'nofollow' => 'boolean',
+        'status_code' => 'integer',
+        'redirect_chain_length' => 'integer',
+        'redirect_chain' => 'array',
         'created_at' => 'datetime',
-        'internal_links_in' => 'integer',
-        'internal_links_out' => 'integer',
-        'depth' => 'integer',
     ];
 
     public function crawl()

@@ -29,9 +29,57 @@ class CrawlController extends Controller
             ->orderByDesc('id')
             ->paginate(100);
 
+        $summary = [
+            'pages_crawled' => (int) $crawl->pages()->count(),
+            'internal_links' => (int) $crawl->links()->where('link_type', 'internal')->count(),
+            'external_links' => (int) $crawl->links()->where('link_type', 'external')->count(),
+            'broken_links' => (int) $crawl->links()->where('status_code', '>=', 400)->count(),
+            'redirects' => (int) $crawl->links()->whereIn('status_code', [301, 302, 307, 308])->count(),
+            'duplicate_pages' => (int) $crawl->pages()
+                ->select('content_hash')
+                ->whereNotNull('content_hash')
+                ->groupBy('content_hash')
+                ->havingRaw('COUNT(*) > 1')
+                ->get()
+                ->count(),
+        ];
+
+        $issueReports = [
+            'missing_alt' => $crawl->pages()->where('alt_count', '>', 0)->count(),
+            'missing_h1' => $crawl->pages()->where('heading_count', '=', 0)->count(),
+            'broken_links' => $summary['broken_links'],
+            'redirect_chains' => $crawl->links()->where('redirect_chain_length', '>', 1)->count(),
+            'duplicate_pages' => $summary['duplicate_pages'],
+            'orphan_pages' => $crawl->pages()->where('internal_links_in', 0)->where('depth', '>', 0)->count(),
+        ];
+
+        $brokenLinks = $crawl->links()
+            ->where('status_code', '>=', 400)
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $redirectChains = $crawl->links()
+            ->whereIn('status_code', [301, 302, 307, 308])
+            ->where('redirect_chain_length', '>', 0)
+            ->orderByDesc('redirect_chain_length')
+            ->limit(200)
+            ->get();
+
+        $orphanPages = $crawl->pages()
+            ->where('internal_links_in', 0)
+            ->where('depth', '>', 0)
+            ->orderBy('url')
+            ->get();
+
         return view('crawls.show', [
             'crawl' => $crawl,
             'pages' => $pages,
+            'summary' => $summary,
+            'issueReports' => $issueReports,
+            'brokenLinks' => $brokenLinks,
+            'redirectChains' => $redirectChains,
+            'orphanPages' => $orphanPages,
         ]);
     }
 
