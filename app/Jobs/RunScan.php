@@ -16,6 +16,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -319,32 +320,99 @@ class RunScan implements ShouldQueue
             return;
         }
 
+        $normalizedUrl = $this->normalizeScanUrl($payload['url'] ?? null);
         $eventPayload = [
             'type' => 'page_scanned',
-            'url' => $payload['url'] ?? null,
+            'url' => $normalizedUrl,
             'status' => $payload['status'] ?? null,
             'alt_count' => (int) ($payload['alt_count'] ?? 0),
             'heading_count' => (int) ($payload['heading_count'] ?? 0),
             'error' => $payload['error'] ?? null,
         ];
 
-        File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
-
         if (!empty($eventPayload['url'])) {
-            CrawlPage::create([
+            $crawlPage = CrawlPage::firstOrNew([
                 'crawl_id' => $scanId,
                 'url' => $eventPayload['url'],
+            ]);
+
+            $crawlPage->fill([
                 'status' => $eventPayload['status'],
                 'alt_count' => $eventPayload['alt_count'],
                 'heading_count' => $eventPayload['heading_count'],
                 'error' => $eventPayload['error'],
-                'created_at' => now(),
             ]);
+
+            if (!$crawlPage->exists) {
+                $crawlPage->created_at = now();
+            }
+
+            $crawlPage->save();
+
+            if (!$crawlPage->wasRecentlyCreated) {
+                return;
+            }
+
+            File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
 
             Crawl::whereKey($scanId)->update([
                 'pages_scanned' => CrawlPage::where('crawl_id', $scanId)->count(),
             ]);
         }
+    }
+
+
+    private function normalizeScanUrl(?string $rawUrl): ?string
+    {
+        $candidate = trim((string) $rawUrl);
+
+        if ($candidate === '') {
+            return null;
+        }
+
+        $parts = parse_url($candidate);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return $candidate;
+        }
+
+        $path = $parts['path'] ?? '';
+        if ($path === '') {
+            $path = '/';
+        }
+
+        if ($path !== '/') {
+            $path = rtrim($path, '/');
+        }
+
+        $query = '';
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $queryParams);
+            $filtered = [];
+
+            foreach ($queryParams as $key => $value) {
+                if (Str::startsWith(Str::lower((string) $key), 'utm_')) {
+                    continue;
+                }
+
+                $filtered[$key] = $value;
+            }
+
+            if (!empty($filtered)) {
+                ksort($filtered);
+                $query = http_build_query($filtered);
+            }
+        }
+
+        $normalized = sprintf(
+            '%s://%s%s%s%s',
+            Str::lower((string) $parts['scheme']),
+            Str::lower((string) $parts['host']),
+            isset($parts['port']) ? ':'.$parts['port'] : '',
+            $path,
+            $query !== '' ? '?'.$query : ''
+        );
+
+        return $normalized;
     }
 
     private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
@@ -377,7 +445,7 @@ class RunScan implements ShouldQueue
             'max_pages' => config('seo.max_pages', 20),
             'max_depth' => config('seo.max_depth', 2),
             'page_timeout' => config('seo.page_timeout', 30),
-            'max_parallel_pages' => (int) env('SCAN_CONCURRENCY', config('seo.max_parallel_pages', 8)),
+            'max_parallel_pages' => (int) env('CRAWLER_CONCURRENCY', config('seo.crawler_concurrency', 6)),
             'max_retries' => min((int) config('seo.max_retries', 2), 2),
             'retry_delay' => config('seo.retry_delay', 10),
             'max_scan_time' => config('seo.max_scan_time', 300),
