@@ -1,15 +1,17 @@
 {
   "name": "scanner",
   "version": "1.0.0",
-  "main": "scanner.js",
+  "main": "core/crawler-worker.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "crawl:worker": "node core/crawler-worker.js",
+    "test": "echo \"No tests configured\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Distributed crawler workers for OS tools",
   "dependencies": {
+    "ioredis": "^5.4.1",
     "puppeteer": "^24.14.0"
   }
 }

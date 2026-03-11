@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Crawler\CrawlerEventConsumer;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -39,3 +40,9 @@ Artisan::command('scan:workers', function () {
 
     $this->info('Scan workers launched.');
 })->purpose('Launch multiple scan queue workers');
+
+Artisan::command('crawl:consume-events {crawlId}', function (string $crawlId, CrawlerEventConsumer $consumer) {
+    while (true) {
+        $consumer->consume($crawlId, 2);
+    }
+})->purpose('Consume crawl events from Redis and persist crawl data.');

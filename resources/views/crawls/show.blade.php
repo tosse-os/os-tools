@@ -5,7 +5,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-semibold">Crawl details</h1>
-      <p class="text-sm text-gray-600">{{ $crawl->start_url }}</p>
+      <p class="text-sm text-gray-600">{{ $crawl->entry_url }}</p>
     </div>
     <div class="flex items-center gap-4">
       <form method="POST" action="{{ route('crawls.rerun', $crawl) }}">
@@ -68,8 +68,8 @@
             <td class="px-4 py-3 text-gray-700">{{ $page->status_code ?? $page->status ?? '—' }}</td>
             <td class="px-4 py-3 break-all text-gray-700">{{ $page->canonical ?? $page->canonical_url ?? '—' }}</td>
             <td class="px-4 py-3 text-gray-700">{{ $page->depth }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links ?? '—' }}</td>
-            <td class="px-4 py-3 text-gray-700">{{ $page->external_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links_count ?? $page->internal_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->external_links_count ?? $page->external_links ?? '—' }}</td>
             <td class="px-4 py-3 text-gray-700">{{ $page->alt_missing_count ?? $page->alt_count }}</td>
             <td class="px-4 py-3 text-gray-700">{{ $page->heading_count }}</td>
             <td class="px-4 py-3 text-red-600">{{ $page->error ?? '—' }}</td>

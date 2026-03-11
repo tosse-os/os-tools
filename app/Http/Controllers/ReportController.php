@@ -226,13 +226,15 @@ class ReportController extends Controller
           'alt_missing_count',
           'internal_links',
           'external_links',
+          'internal_links_count',
+          'external_links_count',
           'text_hash',
         ]);
 
       $crawlSummary = [
         'pages_crawled' => $crawlPages->count(),
-        'internal_links' => CrawlLink::where('crawl_id', $report->id)->where('link_type', 'internal')->count(),
-        'external_links' => CrawlLink::where('crawl_id', $report->id)->where('link_type', 'external')->count(),
+        'internal_links' => CrawlLink::where('crawl_id', $report->id)->where(function ($q) { $q->where('type', 'internal')->orWhere('link_type', 'internal'); })->count(),
+        'external_links' => CrawlLink::where('crawl_id', $report->id)->where(function ($q) { $q->where('type', 'external')->orWhere('link_type', 'external'); })->count(),
       ];
     }
 
