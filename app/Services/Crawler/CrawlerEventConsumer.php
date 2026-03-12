@@ -3,6 +3,7 @@
 namespace App\Services\Crawler;
 
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Log;
 
 class CrawlerEventConsumer
 {
@@ -22,6 +23,13 @@ class CrawlerEventConsumer
         if (!is_array($decoded)) {
             return false;
         }
+
+        Log::info('crawler event received from redis queue', [
+            'expected_crawl_id' => $crawlId,
+            'event_type' => $decoded['type'] ?? 'unknown',
+            'event_crawl_id' => $decoded['crawl_id'] ?? null,
+            'payload' => $decoded['payload'] ?? null,
+        ]);
 
         return $this->crawlerEventProcessor->process($crawlId, $decoded);
     }

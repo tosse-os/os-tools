@@ -5,6 +5,7 @@ namespace App\Services\Crawler;
 use App\Models\Crawl;
 use App\Support\CrawlerRuntime;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
 class CrawlerEventProcessor
@@ -49,6 +50,10 @@ class CrawlerEventProcessor
         }
 
         if ($type === 'link_discovered') {
+            Log::info('routing crawler link_discovered event to CrawlLinkPersister', [
+                'crawl_id' => $crawlId,
+                'payload' => $payload,
+            ]);
             $this->crawlLinkPersister->persist($crawlId, $payload);
         }
 
