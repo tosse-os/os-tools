@@ -49,7 +49,7 @@ class RunLocalSeo implements ShouldQueue
 
         $process = new \Symfony\Component\Process\Process([
             'node',
-            base_path('node-scanner/core/localSeoScanner.js'),
+            base_path('node-scanner/core/localSEOScanner.js'),
             json_encode($options),
             $this->reportId
         ]);
