@@ -7,6 +7,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { createStructuredLogger } = require('../utils/structuredLogger');
 const { normalizeUrl } = require('../utils/urlUtils');
+const { decodeHtmlEntities, sleep, stripTags, toPositiveInt } = require('../utils/runtimeUtils');
 
 const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 const rootLogger = createStructuredLogger({
@@ -16,31 +17,6 @@ const rootLogger = createStructuredLogger({
 
 function log(message) {
   rootLogger.info('scanner_message', { text: message });
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function toPositiveInt(value, fallback) {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
-}
-
-function decodeHtmlEntities(text) {
-  return String(text || '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>');
-}
-
-function stripTags(html) {
-  return decodeHtmlEntities(String(html || '').replace(/<[^>]+>/g, ' '))
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function extractFromHtml(html) {
