@@ -177,13 +177,16 @@ output += `
 === DEPENDENCY MAP ===
 
 ScanController
-→ RunScan Job
+→ RunCrawl Job
 → storage/scans/{scanId}
 
-RunScan
-→ node-scanner/multiScanner.js
+RunCrawl
+→ node-scanner/core/crawler.js
 
-multiScanner.js
+RunLocalSeo
+→ node-scanner/core/localSEOScanner.js
+
+localSEOScanner.js
 → checks/*
 → utils/*
 

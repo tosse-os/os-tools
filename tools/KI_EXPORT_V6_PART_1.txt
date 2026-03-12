@@ -18,8 +18,8 @@ app
       ScanController.php
   Jobs
     RunLocalSeo.php
-    RunMultiScan.php
-    RunScan.php
+    RunLocalSeo.php
+    RunCrawl.php
   Models
     Report.php
     ReportResult.php
@@ -45,8 +45,8 @@ node-scanner
     statusCheck.js
   core
     localSeoScanner.js
-    multiScanner.js
-    scanner.js
+    localSEOScanner.js
+    crawler.js
   crawl
     crawlLinks.js
   utils
@@ -130,7 +130,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Report;
 use Illuminate\Support\Str;
-use App\Jobs\RunScan;
+use App\Jobs\RunCrawl;
 
 class CrawlerController extends Controller
 {
@@ -153,7 +153,7 @@ class CrawlerController extends Controller
       'status' => 'queued'
     ]);
 
-    RunScan::dispatch($report->id, []);
+    RunCrawl::dispatch($report->id, []);
 
     return response()->json([
       'reportId' => $report->id
@@ -404,7 +404,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Scan;
-use App\Jobs\RunScan;
+use App\Jobs\RunCrawl;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
@@ -435,7 +435,7 @@ class ScanController extends Controller
             'checks' => $request->input('checks')
         ]);
 
-        RunScan::dispatch($scan->id, $request->input('checks', []));
+        RunCrawl::dispatch($scan->id, $request->input('checks', []));
 
 
         return response()->json(['scanId' => $scan->id]);
@@ -635,7 +635,7 @@ class RunLocalSeo implements ShouldQueue
 
 
 
------ app/Jobs/RunMultiScan.php -----
+----- app/Jobs/RunLocalSeo.php -----
 
 <?php
 
@@ -649,7 +649,7 @@ use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Log;
 
-class RunMultiScan implements ShouldQueue
+class RunLocalSeo implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -664,14 +664,14 @@ class RunMultiScan implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('RunMultiScan gestartet', [
+        Log::info('RunLocalSeo gestartet', [
             'scanId' => $this->scanId,
             'options' => $this->options
         ]);
 
         $process = new Process([
             'node',
-            base_path('node-scanner/core/multiScanner.js'),
+            base_path('node-scanner/core/localSEOScanner.js'),
             json_encode($this->options),
             $this->scanId
         ]);
@@ -691,7 +691,7 @@ class RunMultiScan implements ShouldQueue
 
 
 
------ app/Jobs/RunScan.php -----
+----- app/Jobs/RunCrawl.php -----
 
 <?php
 
@@ -707,7 +707,7 @@ use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 
-class RunScan implements ShouldQueue
+class RunCrawl implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -739,7 +739,7 @@ class RunScan implements ShouldQueue
 
         $process = new Process([
             'node',
-            base_path('node-scanner/core/multiScanner.js'),
+            base_path('node-scanner/core/localSEOScanner.js'),
             json_encode($options),
             $this->scanId
         ]);
