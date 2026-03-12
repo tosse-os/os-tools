@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Scan;
 use App\Models\Crawl;
-use App\Jobs\RunScan;
+use App\Jobs\RunCrawl;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
@@ -52,7 +52,7 @@ class ScanController extends Controller
             'scan_id' => $scan->id,
         ]);
 
-        RunScan::dispatch($scan->id, $request->input('checks', []));
+        RunCrawl::dispatch($scan->id);
 
         Log::debug('[SCAN TRACE] job_dispatched', [
             'scan_id' => $scan->id,
