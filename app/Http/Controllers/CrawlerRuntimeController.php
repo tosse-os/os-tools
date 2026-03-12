@@ -6,6 +6,7 @@ use App\Services\Crawler\CrawlerEventProcessor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CrawlerRuntimeController extends Controller
 {
@@ -15,6 +16,12 @@ class CrawlerRuntimeController extends Controller
             'crawl_id' => ['required', 'string'],
             'type' => ['required', 'string'],
             'payload' => ['nullable', 'array'],
+        ]);
+
+        Log::info('crawler event received from http endpoint', [
+            'event_type' => $payload['type'],
+            'event_crawl_id' => $payload['crawl_id'],
+            'payload' => $payload['payload'] ?? null,
         ]);
 
         $processed = $processor->process($payload['crawl_id'], $payload);

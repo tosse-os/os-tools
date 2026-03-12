@@ -38,6 +38,12 @@ function absoluteUrl(base, target) {
 }
 
 async function emit(event) {
+  console.log('[crawler-worker] emitting event', {
+    crawl_id: event.crawl_id,
+    type: event.type,
+    mode: runtimeMode,
+  });
+
   if (runtimeMode === 'http') {
     await fetch(`${httpBaseUrl}/internal/crawler/event`, {
       method: 'POST',
@@ -81,6 +87,16 @@ async function crawlUrl(task) {
   const text = stripHtml(html);
   const links = extractLinks(html).map((link) => absoluteUrl(finalUrl, link)).filter(Boolean);
   const rootHost = (() => { try { return new URL(url).host; } catch { return ''; } })();
+  const internalLinks = links.filter((link) => { try { return new URL(link).host === rootHost; } catch { return false; } });
+  const externalLinks = links.filter((link) => { try { return new URL(link).host !== rootHost; } catch { return false; } });
+
+  console.log('[crawler-worker] links extracted', {
+    crawl_id: crawlId,
+    url,
+    extracted_total: links.length,
+    internal_count: internalLinks.length,
+    external_count: externalLinks.length,
+  });
 
   await emit({
     crawl_id: crawlId,
@@ -94,8 +110,8 @@ async function crawlUrl(task) {
       meta_description: (html.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i) || [])[1] || null,
       h1_count: (html.match(/<h1\b/gi) || []).length,
       alt_missing_count: (html.match(/<img\b(?![^>]*\balt=)[^>]*>/gi) || []).length,
-      internal_links_count: links.filter((link) => { try { return new URL(link).host === rootHost; } catch { return false; } }).length,
-      external_links_count: links.filter((link) => { try { return new URL(link).host !== rootHost; } catch { return false; } }).length,
+      internal_links_count: internalLinks.length,
+      external_links_count: externalLinks.length,
       word_count: text ? text.split(/\s+/).length : 0,
       content_hash: hash(html),
       text_hash: hash(text),
@@ -119,6 +135,7 @@ async function crawlUrl(task) {
       type: 'link_discovered',
       timestamp: nowIso(),
       payload: {
+        crawl_id: crawlId,
         source_url: url,
         target_url: targetUrl,
         type,

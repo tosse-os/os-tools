@@ -13,7 +13,9 @@ use App\Http\Controllers\AdminSettingsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\CrawlerRuntimeController;
+use App\Services\Crawler\CrawlLinkPersister;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Support\Facades\DB;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -117,3 +119,35 @@ Route::post('/internal/crawler/event', [CrawlerRuntimeController::class, 'event'
 Route::post('/internal/crawler/next-task', [CrawlerRuntimeController::class, 'nextTask'])
     ->withoutMiddleware([VerifyCsrfToken::class])
     ->name('crawler.runtime.next-task');
+
+Route::get('/debug/link-test', function (CrawlLinkPersister $persister) {
+    $crawlId = request('crawl_id');
+
+    if (!$crawlId) {
+        return response()->json([
+            'ok' => false,
+            'error' => 'Pass crawl_id query parameter pointing to an existing crawl id.',
+        ], 422);
+    }
+
+    $payload = [
+        'source_url' => 'https://example.com',
+        'target_url' => 'https://example.com/page',
+        'type' => 'internal',
+        'status_code' => 200,
+    ];
+
+    $persister->persist($crawlId, $payload);
+
+    $stored = DB::table('crawl_links')
+        ->where('crawl_id', $crawlId)
+        ->where('source_url', $payload['source_url'])
+        ->where('target_url', $payload['target_url'])
+        ->first();
+
+    return response()->json([
+        'ok' => (bool) $stored,
+        'crawl_id' => $crawlId,
+        'stored' => $stored,
+    ]);
+})->name('debug.link-test');
