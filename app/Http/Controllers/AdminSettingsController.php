@@ -18,6 +18,7 @@ class AdminSettingsController extends Controller
         'max_retries',
         'retry_delay',
         'max_scan_time',
+        'crawler_use_redis',
     ];
 
     public function index(): View
@@ -33,6 +34,11 @@ class AdminSettingsController extends Controller
         $settings = [];
 
         foreach (self::SETTING_KEYS as $key) {
+            if ($key === 'crawler_use_redis') {
+                $settings[$key] = (bool) ((int) ($storedSettings[$key] ?? 0));
+                continue;
+            }
+
             $settings[$key] = (int) ($storedSettings[$key] ?? config("seo.{$key}"));
         }
 
@@ -47,10 +53,16 @@ class AdminSettingsController extends Controller
         $rules = [];
 
         foreach (self::SETTING_KEYS as $key) {
+            if ($key === 'crawler_use_redis') {
+                $rules[$key] = ['nullable', 'boolean'];
+                continue;
+            }
+
             $rules[$key] = ['required', 'integer', 'min:1'];
         }
 
         $validated = $request->validate($rules);
+        $validated['crawler_use_redis'] = $request->boolean('crawler_use_redis');
 
         if (! Schema::hasTable('system_settings')) {
             return redirect()
@@ -64,7 +76,7 @@ class AdminSettingsController extends Controller
         foreach (self::SETTING_KEYS as $key) {
             $rows[] = [
                 'key' => $key,
-                'value' => (string) $validated[$key],
+                'value' => (string) (int) $validated[$key],
                 'created_at' => $now,
                 'updated_at' => $now,
             ];

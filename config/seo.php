@@ -9,4 +9,5 @@ return [
   'max_retries' => 2,
   'retry_delay' => 10,
   'max_scan_time' => 300,
+  'crawler_use_redis' => false,
 ];

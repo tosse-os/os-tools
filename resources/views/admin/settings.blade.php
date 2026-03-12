@@ -15,6 +15,27 @@
     @csrf
 
     @foreach ($settingKeys as $key)
+    @if ($key === 'crawler_use_redis')
+    <div class="rounded-lg border border-gray-200 p-4">
+      <label for="crawler_use_redis" class="inline-flex items-center gap-3 text-sm font-medium text-gray-700">
+        <input
+          type="checkbox"
+          id="crawler_use_redis"
+          name="crawler_use_redis"
+          value="1"
+          @checked(old('crawler_use_redis', $settings['crawler_use_redis'] ?? false))
+          class="rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+        >
+        <span>Enable Redis Queue</span>
+      </label>
+      <p class="mt-2 text-xs text-gray-500">If enabled, the crawler uses Redis queues and Redis-backed event transport.</p>
+      @error($key)
+      <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+      @enderror
+    </div>
+    @continue
+    @endif
+
     <div>
       <label for="{{ $key }}" class="block text-sm font-medium text-gray-700 mb-1">
         {{ str_replace('_', ' ', ucfirst($key)) }}

@@ -12,6 +12,8 @@ use App\Http\Controllers\ScanController;
 use App\Http\Controllers\AdminSettingsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\AnalysisController;
+use App\Http\Controllers\CrawlerRuntimeController;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 
 Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -108,3 +110,10 @@ Route::get('/system/workers', [QueueController::class, 'workers'])->name('system
 
 Route::get('/admin/settings', [AdminSettingsController::class, 'index'])->name('admin.settings.index');
 Route::post('/admin/settings', [AdminSettingsController::class, 'update'])->name('admin.settings.update');
+
+Route::post('/internal/crawler/event', [CrawlerRuntimeController::class, 'event'])
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('crawler.runtime.event');
+Route::post('/internal/crawler/next-task', [CrawlerRuntimeController::class, 'nextTask'])
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('crawler.runtime.next-task');
