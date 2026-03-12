@@ -1,6 +1,7 @@
 const { URL } = require('url');
 const crypto = require('crypto');
-const { normalizeUrl } = require('../utils/urlUtils');
+const { normalizeHost, normalizeUrl } = require('../utils/urlUtils');
+const { sleep, toPositiveInt } = require('../utils/runtimeUtils');
 
 function createLogger(logger) {
   if (logger && typeof logger.info === 'function') {
@@ -24,19 +25,6 @@ function createLogger(logger) {
   };
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function toPositiveInt(value, fallback) {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
-}
-
-
-function normalizeHost(hostname) {
-  return (hostname || '').toLowerCase().replace(/^www\./, '');
-}
 
 function hasSkippedPath(pathname) {
   if (!pathname) {

@@ -1,12 +1,12 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
-const crypto = require('crypto');
 const { URL } = require('url');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
 const statusCheck = require('../checks/statusCheck');
 const { createStructuredLogger } = require('../utils/structuredLogger');
-const { normalizeUrl } = require('../utils/urlUtils');
+const { normalizeHost, normalizeUrl } = require('../utils/urlUtils');
+const { fetchWithTimeout, hashContent, resolveLinkStatus, sleep, toPositiveInt } = require('../utils/runtimeUtils');
 
 const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 const logger = createStructuredLogger({
@@ -14,87 +14,8 @@ const logger = createStructuredLogger({
   output: process.stderr,
 });
 
-function toPositiveInt(value, fallback) {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? Math.floor(num) : fallback;
-}
-
-function normalizeHost(hostname) {
-  return (hostname || '').toLowerCase().replace(/^www\./, '');
-}
-
 function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function hashContent(content) {
-  return crypto.createHash('sha256').update(content || '').digest('hex');
-}
-
-function isRedirectStatus(code) {
-  return [301, 302, 307, 308].includes(Number(code));
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function resolveLinkStatus(targetUrl, maxRedirects = 6) {
-  const chain = [];
-  let current = targetUrl;
-
-  for (let index = 0; index < maxRedirects; index += 1) {
-    let response;
-    try {
-      response = await fetchWithTimeout(current, { method: 'HEAD', redirect: 'manual' });
-
-      if ([400, 403, 405].includes(response.status)) {
-        response = await fetchWithTimeout(current, { method: 'GET', redirect: 'manual' });
-      }
-    } catch {
-      return {
-        status_code: null,
-        redirect_target: null,
-        redirect_chain: chain,
-        redirect_chain_length: chain.length,
-      };
-    }
-
-    const statusCode = Number(response.status);
-    const location = response.headers.get('location');
-    const resolvedNext = location ? normalizeUrl(location, current) : null;
-
-    if (isRedirectStatus(statusCode) && resolvedNext) {
-      chain.push({ url: current, status_code: statusCode, target: resolvedNext });
-      current = resolvedNext;
-      continue;
-    }
-
-    return {
-      status_code: statusCode,
-      redirect_target: chain.length > 0 ? current : null,
-      redirect_chain: chain,
-      redirect_chain_length: chain.length,
-    };
-  }
-
-  return {
-    status_code: null,
-    redirect_target: current,
-    redirect_chain: chain,
-    redirect_chain_length: chain.length,
-  };
 }
 
 let options;
@@ -456,7 +377,7 @@ try {
       if (!linkStatusCache.has(link.target_url)) {
         // Resolve once per target to keep the analysis lightweight.
         // eslint-disable-next-line no-await-in-loop
-        linkStatusCache.set(link.target_url, await resolveLinkStatus(link.target_url));
+        linkStatusCache.set(link.target_url, await resolveLinkStatus(link.target_url, normalizeUrl));
       }
 
       enrichedLinks.push({

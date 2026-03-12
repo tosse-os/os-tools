@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const Redis = require('ioredis');
+const { absoluteUrl } = require('../utils/urlUtils');
 
 const redis = new Redis(process.env.REDIS_URL || undefined);
 const concurrency = Math.max(1, Number(process.env.CRAWLER_CONCURRENCY || 4));
@@ -29,13 +30,6 @@ function extractLinks(html = '') {
   return Array.from(String(html).matchAll(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi)).map((m) => m[1]);
 }
 
-function absoluteUrl(base, target) {
-  try {
-    return new URL(target, base).toString();
-  } catch {
-    return null;
-  }
-}
 
 async function emit(event) {
   console.log('[crawler-worker] emitting event', {

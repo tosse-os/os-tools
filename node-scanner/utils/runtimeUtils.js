@@ -29,6 +29,58 @@ function hashContent(content) {
   return crypto.createHash('sha256').update(content || '').digest('hex');
 }
 
+
+function isRedirectStatus(code) {
+  return [301, 302, 307, 308].includes(Number(code));
+}
+
+async function resolveLinkStatus(targetUrl, normalizeUrl, maxRedirects = 6) {
+  const chain = [];
+  let current = targetUrl;
+
+  for (let index = 0; index < maxRedirects; index += 1) {
+    let response;
+    try {
+      response = await fetchWithTimeout(current, { method: 'HEAD', redirect: 'manual' });
+
+      if ([400, 403, 405].includes(response.status)) {
+        response = await fetchWithTimeout(current, { method: 'GET', redirect: 'manual' });
+      }
+    } catch {
+      return {
+        status_code: null,
+        redirect_target: null,
+        redirect_chain: chain,
+        redirect_chain_length: chain.length,
+      };
+    }
+
+    const statusCode = Number(response.status);
+    const location = response.headers.get('location');
+    const resolvedNext = location ? normalizeUrl(location, current) : null;
+
+    if (isRedirectStatus(statusCode) && resolvedNext) {
+      chain.push({ url: current, status_code: statusCode, target: resolvedNext });
+      current = resolvedNext;
+      continue;
+    }
+
+    return {
+      status_code: statusCode,
+      redirect_target: chain.length > 0 ? current : null,
+      redirect_chain: chain,
+      redirect_chain_length: chain.length,
+    };
+  }
+
+  return {
+    status_code: null,
+    redirect_target: current,
+    redirect_chain: chain,
+    redirect_chain_length: chain.length,
+  };
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -47,4 +99,5 @@ module.exports = {
   toPositiveInt,
   hashContent,
   fetchWithTimeout,
+  resolveLinkStatus,
 };

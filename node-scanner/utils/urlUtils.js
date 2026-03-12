@@ -16,6 +16,18 @@ function isTrackingParam(key) {
   return TRACKING_QUERY_PARAM_PATTERNS.some((pattern) => pattern.test(key));
 }
 
+function normalizeHost(hostname) {
+  return (hostname || '').toLowerCase().replace(/^www\./, '');
+}
+
+function absoluteUrl(base, target) {
+  try {
+    return new URL(target, base).toString();
+  } catch {
+    return null;
+  }
+}
+
 function normalizeUrl(raw, base = '') {
   try {
     const candidate = String(raw || '').trim();
@@ -87,6 +99,8 @@ function collectUniqueUrls(baseUrl, hrefs) {
 }
 
 module.exports = {
+  absoluteUrl,
+  normalizeHost,
   normalizeUrl,
   collectUniqueUrls,
 };
