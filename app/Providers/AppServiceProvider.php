@@ -36,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
             'max_retries',
             'retry_delay',
             'max_scan_time',
+            'crawler_use_redis',
         ];
 
         $settings = DB::table('system_settings')
@@ -44,6 +45,11 @@ class AppServiceProvider extends ServiceProvider
 
         foreach ($settingKeys as $key) {
             $value = $settings[$key] ?? null;
+
+            if ($key === 'crawler_use_redis') {
+                config(["seo.{$key}" => (int) ($value ?? 0) === 1]);
+                continue;
+            }
 
             if ($value !== null && is_numeric($value)) {
                 config(["seo.{$key}" => (int) $value]);

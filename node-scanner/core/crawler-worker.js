@@ -6,6 +6,12 @@ const Redis = require('ioredis');
 const redis = new Redis(process.env.REDIS_URL || undefined);
 const concurrency = Math.max(1, Number(process.env.CRAWLER_CONCURRENCY || 4));
 const active = new Set();
+const runtimeMode = process.env.CRAWLER_RUNTIME_MODE || 'redis';
+const httpBaseUrl = process.env.CRAWLER_HTTP_BASE_URL || 'http://127.0.0.1:8000';
+const httpCrawlId = process.env.CRAWLER_ID || '';
+const httpStartUrl = process.env.CRAWLER_START_URL || '';
+const localQueue = [];
+const seenUrls = new Set();
 
 function nowIso() {
   return new Date().toISOString();
@@ -32,6 +38,15 @@ function absoluteUrl(base, target) {
 }
 
 async function emit(event) {
+  if (runtimeMode === 'http') {
+    await fetch(`${httpBaseUrl}/internal/crawler/event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+    return;
+  }
+
   await redis.lpush('crawl:event_queue', JSON.stringify(event));
 }
 
@@ -113,6 +128,11 @@ async function crawlUrl(task) {
     });
 
     if (type === 'internal') {
+      if (runtimeMode === 'http' && !seenUrls.has(targetUrl)) {
+        seenUrls.add(targetUrl);
+        localQueue.push({ crawl_id: crawlId, url: targetUrl, depth: depth + 1 });
+      }
+
       await emit({
         crawl_id: crawlId,
         type: 'url_discovered',
@@ -129,21 +149,52 @@ async function crawlUrl(task) {
 }
 
 async function loop() {
+  if (runtimeMode === 'http') {
+    if (httpStartUrl && httpCrawlId) {
+      seenUrls.add(httpStartUrl);
+      localQueue.push({ crawl_id: httpCrawlId, url: httpStartUrl, depth: 0 });
+      await emit({
+        crawl_id: httpCrawlId,
+        type: 'crawl_started',
+        timestamp: nowIso(),
+        payload: { url: httpStartUrl },
+      });
+    }
+  }
+
   while (true) {
     while (active.size >= concurrency) {
       await Promise.race(active);
     }
 
-    const result = await redis.brpop('crawl:url_queue', 2);
-    if (!result || !result[1]) {
-      continue;
-    }
-
     let task;
-    try {
-      task = JSON.parse(result[1]);
-    } catch {
-      continue;
+    if (runtimeMode === 'http') {
+      task = localQueue.shift();
+      if (!task) {
+        if (active.size === 0) {
+          await emit({
+            crawl_id: httpCrawlId,
+            type: 'crawl_finished',
+            timestamp: nowIso(),
+            payload: { worker: process.env.CRAWLER_WORKER_ID || '1' },
+          });
+          process.exit(0);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        continue;
+      }
+    } else {
+      const result = await redis.brpop('crawl:url_queue', 2);
+      if (!result || !result[1]) {
+        continue;
+      }
+
+      try {
+        task = JSON.parse(result[1]);
+      } catch {
+        continue;
+      }
     }
 
     if (task.type === 'crawl_stop') {

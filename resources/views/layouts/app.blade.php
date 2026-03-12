@@ -171,6 +171,17 @@
   </header>
 
   <main class="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+    @if (session('system_warnings'))
+    <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div class="font-semibold mb-1">System warnings</div>
+      <ul class="list-disc ml-5 space-y-1">
+        @foreach ((array) session('system_warnings') as $warning)
+        <li>{{ $warning }}</li>
+        @endforeach
+      </ul>
+    </div>
+    @endif
+
     @yield('content')
   </main>
 

@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Crawl;
 use App\Models\Report;
 use App\Services\Crawler\CrawlerEventConsumer;
+use App\Support\CrawlerRuntime;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -24,8 +25,11 @@ class RunCrawl implements ShouldQueue
 
     public function handle(CrawlerEventConsumer $consumer): void
     {
+        CrawlerRuntime::assertRedisOrWarn();
+
         $crawl = Crawl::findOrFail($this->crawlId);
         $rootUrl = $crawl->entry_url;
+        $useRedis = CrawlerRuntime::useRedis();
 
         Report::whereKey($this->crawlId)->update([
             'status' => 'running',
@@ -43,14 +47,16 @@ class RunCrawl implements ShouldQueue
             ['depth' => 0, 'status' => 'pending', 'created_at' => now()]
         );
 
-        Redis::lpush('crawl:url_queue', json_encode([
-            'crawl_id' => $crawl->id,
-            'url' => $rootUrl,
-            'depth' => 0,
-        ], JSON_UNESCAPED_SLASHES));
+        if ($useRedis) {
+            Redis::lpush('crawl:url_queue', json_encode([
+                'crawl_id' => $crawl->id,
+                'url' => $rootUrl,
+                'depth' => 0,
+            ], JSON_UNESCAPED_SLASHES));
+        }
 
         $workers = [];
-        $workerCount = max(1, (int) env('CRAWLER_WORKERS', 2));
+        $workerCount = $useRedis ? max(1, (int) env('CRAWLER_WORKERS', 2)) : 1;
         for ($i = 0; $i < $workerCount; $i++) {
             $process = new Process([
                 'node',
@@ -58,6 +64,10 @@ class RunCrawl implements ShouldQueue
             ], base_path(), [
                 'CRAWLER_WORKER_ID' => (string) ($i + 1),
                 'CRAWLER_CONCURRENCY' => (string) env('CRAWLER_CONCURRENCY', 4),
+                'CRAWLER_RUNTIME_MODE' => $useRedis ? 'redis' : 'http',
+                'CRAWLER_HTTP_BASE_URL' => rtrim((string) config('app.url', 'http://127.0.0.1:8000'), '/'),
+                'CRAWLER_ID' => $crawl->id,
+                'CRAWLER_START_URL' => $rootUrl,
             ]);
 
             $process->setTimeout(null);
@@ -65,16 +75,18 @@ class RunCrawl implements ShouldQueue
             $workers[] = $process;
         }
 
-        Redis::lpush('crawl:event_queue', json_encode([
-            'crawl_id' => $crawl->id,
-            'type' => 'crawl_started',
-            'timestamp' => now()->toIso8601String(),
-            'payload' => ['url' => $rootUrl],
-        ], JSON_UNESCAPED_SLASHES));
+        if ($useRedis) {
+            Redis::lpush('crawl:event_queue', json_encode([
+                'crawl_id' => $crawl->id,
+                'type' => 'crawl_started',
+                'timestamp' => now()->toIso8601String(),
+                'payload' => ['url' => $rootUrl],
+            ], JSON_UNESCAPED_SLASHES));
+        }
 
         $idleCycles = 0;
         while ($idleCycles < 30) {
-            $consumed = $consumer->consume($crawl->id, 1);
+            $consumed = $useRedis ? $consumer->consume($crawl->id, 1) : false;
             if ($consumed) {
                 $idleCycles = 0;
                 continue;
@@ -87,21 +99,23 @@ class RunCrawl implements ShouldQueue
             }
         }
 
-        for ($i = 0; $i < $workerCount; $i++) {
-            Redis::lpush('crawl:url_queue', json_encode([
-                'type' => 'crawl_stop',
+        if ($useRedis) {
+            for ($i = 0; $i < $workerCount; $i++) {
+                Redis::lpush('crawl:url_queue', json_encode([
+                    'type' => 'crawl_stop',
+                    'crawl_id' => $crawl->id,
+                ], JSON_UNESCAPED_SLASHES));
+            }
+
+            Redis::lpush('crawl:event_queue', json_encode([
                 'crawl_id' => $crawl->id,
+                'type' => 'crawl_finished',
+                'timestamp' => now()->toIso8601String(),
+                'payload' => [],
             ], JSON_UNESCAPED_SLASHES));
+
+            $consumer->consume($crawl->id, 1);
         }
-
-        Redis::lpush('crawl:event_queue', json_encode([
-            'crawl_id' => $crawl->id,
-            'type' => 'crawl_finished',
-            'timestamp' => now()->toIso8601String(),
-            'payload' => [],
-        ], JSON_UNESCAPED_SLASHES));
-
-        $consumer->consume($crawl->id, 1);
 
         foreach ($workers as $worker) {
             $worker->stop(1);
