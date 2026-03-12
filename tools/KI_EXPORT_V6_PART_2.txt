@@ -267,7 +267,7 @@ function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {
 
 
 
------ node-scanner/core/multiScanner.js -----
+----- node-scanner/core/localSEOScanner.js -----
 
 const puppeteer = require('puppeteer');
 const altCheck = require('../checks/altCheck');
@@ -471,7 +471,7 @@ if (!fs.existsSync(resultDir)) {
 
 
 
------ node-scanner/core/scanner.js -----
+----- node-scanner/core/crawler.js -----
 
 const puppeteer = require('puppeteer');
 const altCheck = require('../checks/altCheck');
@@ -875,13 +875,16 @@ export default defineConfig({
 === DEPENDENCY MAP ===
 
 ScanController
-→ RunScan Job
+→ RunCrawl Job
 → storage/scans/{scanId}
 
-RunScan
-→ node-scanner/multiScanner.js
+RunCrawl
+→ node-scanner/core/crawler.js
 
-multiScanner.js
+RunLocalSeo
+→ node-scanner/core/localSEOScanner.js
+
+localSEOScanner.js
 → checks/*
 → utils/*
 
