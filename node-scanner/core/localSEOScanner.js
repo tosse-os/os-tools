@@ -19,6 +19,26 @@ function log(message) {
   rootLogger.info('scanner_message', { text: message });
 }
 
+
+let lastEventAt = Date.now();
+
+function markEventEmission(type) {
+  lastEventAt = Date.now();
+  rootLogger.debug('event_emitted', { event_type: type });
+}
+
+process.on('uncaughtException', (err) => {
+  rootLogger.error('uncaught_exception', { error: err?.message || String(err), stack: err?.stack || null });
+});
+
+process.on('unhandledRejection', (err) => {
+  rootLogger.error('unhandled_rejection', { error: err?.message || String(err), stack: err?.stack || null });
+});
+
+process.on('exit', (code) => {
+  rootLogger.info('process_exit', { code });
+});
+
 function extractFromHtml(html) {
   const safeHtml = String(html || '');
   const titleMatch = safeHtml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -184,6 +204,7 @@ function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSiz
   };
 
   logger.info('crawl_progress', event);
+  markEventEmission(event.type);
   process.stdout.write(`${JSON.stringify(event)}\n`);
 
   writeProgress(resultDir, {
@@ -209,6 +230,7 @@ function publishPageScanned({ logger, url, status, altCount, headingCount, error
   };
 
   logger.info('page_scanned', event);
+  markEventEmission(event.type);
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
@@ -294,7 +316,9 @@ if (!fs.existsSync(resultDir)) {
 
 (async () => {
   const logger = rootLogger.child({ scan_id: scanId });
+  logger.info('scanner_started', { scan_id: scanId });
   const checks = Array.isArray(options.checks) ? options.checks : [];
+  logger.debug('options_received', { options });
   const maxPages = toPositiveInt(options.max_pages ?? options.maxPages, 20);
   const maxDepth = toPositiveInt(options.max_depth ?? options.maxDepth, 2);
   const maxParallelPages = toPositiveInt(
@@ -313,6 +337,12 @@ if (!fs.existsSync(resultDir)) {
   const pageTimeoutMs = pageTimeoutSeconds * 1000;
   const retryDelayMs = retryDelaySeconds * 1000;
   const maxScanTimeMs = maxScanTimeSeconds * 1000;
+  const workerHeartbeatWatch = setInterval(() => {
+    const idleMs = Date.now() - lastEventAt;
+    if (idleMs > 60000) {
+      logger.warn('worker_event_heartbeat_timeout', { idle_ms: idleMs, scan_id: scanId });
+    }
+  }, 10000);
 
   logger.info('scan_started', {
     url: options.url,
@@ -434,8 +464,13 @@ if (!fs.existsSync(resultDir)) {
     let page;
     const result = { url };
     let success = false;
+    let urlTimeoutHandle;
 
     try {
+      logger.info('url_crawled', { url, position });
+      urlTimeoutHandle = setTimeout(() => {
+        logger.warn('crawler_timeout_detected', { url, timeout_ms: 30000 });
+      }, 30000);
       page = await browser.newPage();
       await configurePage(page);
       let currentExtraction = {
@@ -625,6 +660,7 @@ if (!fs.existsSync(resultDir)) {
         result.error = 'Scan abgebrochen (Abort-Flag oder max_scan_time erreicht).';
       }
     } finally {
+      clearTimeout(urlTimeoutHandle);
       fs.writeFileSync(path.join(resultDir, `${position}.json`), JSON.stringify(result, null, 2));
 
       const normalizedResultUrl = normalizeUrl(url, options.url) || url;
@@ -741,5 +777,6 @@ if (!fs.existsSync(resultDir)) {
     });
   }
 
+  clearInterval(workerHeartbeatWatch);
   await browser.close();
 })();

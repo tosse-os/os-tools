@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
+const crypto = require('crypto');
 const { URL } = require('url');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
@@ -15,8 +16,27 @@ const logger = createStructuredLogger({
 });
 
 function emit(event) {
+  logger.debug('event_emitted', { event_type: event?.type || 'unknown' });
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
+
+process.on('uncaughtException', (err) => {
+  logger.error('uncaught_exception', {
+    error: err?.message || String(err),
+    stack: err?.stack || null,
+  });
+});
+
+process.on('unhandledRejection', (err) => {
+  logger.error('unhandled_rejection', {
+    error: err?.message || String(err),
+    stack: err?.stack || null,
+  });
+});
+
+process.on('exit', (code) => {
+  logger.info('process_exit', { code });
+});
 
 let options;
 try {
@@ -39,6 +59,7 @@ try {
   const checks = Array.isArray(options.checks) ? options.checks : [];
 
   const scanLogger = logger.child({ scan_id: scanId });
+  scanLogger.debug('options_received', { options });
 
   const queue = [{ url: startUrl, depth: 0 }];
   const visited_urls = new Set();
@@ -94,6 +115,7 @@ try {
   }
 
   async function createWorker(workerId) {
+    scanLogger.info('worker_started', { worker_id: workerId });
     let browser = await puppeteer.launch({ headless: 'new' });
     let page = await browser.newPage();
     let pagesSinceRestart = 0;
@@ -115,6 +137,12 @@ try {
       }
 
       const { url, depth } = item;
+      scanLogger.debug('queue_status', {
+        worker_id: workerId,
+        queue_size: queue.length,
+        visited_count: visited_urls.size,
+        queued_count: queued_urls.size,
+      });
       queued_urls.delete(url);
 
       if (visited_urls.has(url) || scannedPages >= maxPages) {
@@ -158,7 +186,16 @@ try {
         text_hash: null,
       };
 
+      const urlTimeoutHandle = setTimeout(() => {
+        scanLogger.warn('crawler_timeout_detected', {
+          worker_id: workerId,
+          url,
+          timeout_ms: 30000,
+        });
+      }, 30000);
+
       try {
+        scanLogger.info('url_crawled', { worker_id: workerId, url, depth });
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout * 1000 });
         pageResult.status_code = response?.status() || null;
         pageResult.status = pageResult.status_code !== null ? String(pageResult.status_code) : null;
@@ -312,6 +349,11 @@ try {
           }
         }
       } catch (error) {
+        scanLogger.error('fetch_failed', {
+          worker_id: workerId,
+          url,
+          error: error?.message || String(error),
+        });
         let retryError = error;
         let success = false;
 
@@ -333,6 +375,8 @@ try {
           pageResult.error = retryError.message;
           pageResult.status = 'error';
         }
+      } finally {
+        clearTimeout(urlTimeoutHandle);
       }
 
       pageResults.push({ ...pageResult, depth: pageDepth.get(url) ?? depth });
@@ -464,6 +508,7 @@ try {
 
     emit({ type: 'scan_result', result });
   } catch (error) {
+    scanLogger.error('scan_error', { error: error?.message || String(error), stack: error?.stack || null });
     emit({
       type: 'scan_finished',
       status: 'failed',
