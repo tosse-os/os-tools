@@ -20,18 +20,37 @@ function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
-process.on('uncaughtException', (err) => {
-  logger.error('uncaught_exception', {
+let isFatalShutdown = false;
+
+function handleFatalError(type, err) {
+  logger.error(type, {
     error: err?.message || String(err),
     stack: err?.stack || null,
   });
+
+  if (isFatalShutdown) {
+    return;
+  }
+
+  isFatalShutdown = true;
+
+  emit({
+    type: 'scan_finished',
+    status: 'failed',
+    error: err?.message || String(err),
+  });
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 25).unref();
+}
+
+process.on('uncaughtException', (err) => {
+  handleFatalError('uncaught_exception', err);
 });
 
 process.on('unhandledRejection', (err) => {
-  logger.error('unhandled_rejection', {
-    error: err?.message || String(err),
-    stack: err?.stack || null,
-  });
+  handleFatalError('unhandled_rejection', err);
 });
 
 process.on('exit', (code) => {

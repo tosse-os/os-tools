@@ -27,12 +27,28 @@ logger.info('worker_process_started', {
   start_url: httpStartUrl || null,
 });
 
+let isFatalShutdown = false;
+
+function handleFatalError(type, err) {
+  logger.error(type, { error: err?.message || String(err), stack: err?.stack || null });
+
+  if (isFatalShutdown) {
+    return;
+  }
+
+  isFatalShutdown = true;
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 25).unref();
+}
+
 process.on('uncaughtException', (err) => {
-  logger.error('uncaught_exception', { error: err?.message || String(err), stack: err?.stack || null });
+  handleFatalError('uncaught_exception', err);
 });
 
 process.on('unhandledRejection', (err) => {
-  logger.error('unhandled_rejection', { error: err?.message || String(err), stack: err?.stack || null });
+  handleFatalError('unhandled_rejection', err);
 });
 
 process.on('exit', (code) => {

@@ -27,12 +27,37 @@ function markEventEmission(type) {
   rootLogger.debug('event_emitted', { event_type: type });
 }
 
+let isFatalShutdown = false;
+
+function handleFatalError(type, err) {
+  rootLogger.error(type, { error: err?.message || String(err), stack: err?.stack || null });
+
+  if (isFatalShutdown) {
+    return;
+  }
+
+  isFatalShutdown = true;
+
+  const event = {
+    type: 'scan_finished',
+    status: 'failed',
+    error: err?.message || String(err),
+  };
+
+  markEventEmission(event.type);
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 25).unref();
+}
+
 process.on('uncaughtException', (err) => {
-  rootLogger.error('uncaught_exception', { error: err?.message || String(err), stack: err?.stack || null });
+  handleFatalError('uncaught_exception', err);
 });
 
 process.on('unhandledRejection', (err) => {
-  rootLogger.error('unhandled_rejection', { error: err?.message || String(err), stack: err?.stack || null });
+  handleFatalError('unhandled_rejection', err);
 });
 
 process.on('exit', (code) => {
@@ -343,6 +368,7 @@ if (!fs.existsSync(resultDir)) {
       logger.warn('worker_event_heartbeat_timeout', { idle_ms: idleMs, scan_id: scanId });
     }
   }, 10000);
+  workerHeartbeatWatch.unref();
 
   logger.info('scan_started', {
     url: options.url,
