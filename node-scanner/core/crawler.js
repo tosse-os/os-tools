@@ -15,9 +15,17 @@ const logger = createStructuredLogger({
   output: process.stderr,
 });
 
+logger.info('Scanner process started');
+console.log('Scanner process started');
+
+function logScannerStep(step) {
+  logger.info('Scanner step', { step });
+  console.log('Scanner step:', step);
+}
+
 function emit(event) {
   logger.debug('event_emitted', { event_type: event?.type || 'unknown' });
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 }
 
 let isFatalShutdown = false;
@@ -46,10 +54,12 @@ function handleFatalError(type, err) {
 }
 
 process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
   handleFatalError('uncaught_exception', err);
 });
 
 process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
   handleFatalError('unhandled_rejection', err);
 });
 
@@ -60,6 +70,7 @@ process.on('exit', (code) => {
 let options;
 try {
   options = JSON.parse(process.argv[2]);
+  logScannerStep('options_parsed');
 } catch (err) {
   logger.error('scan_error', { error: 'Ungültige Optionen', details: err.message });
   emit({ type: 'scan_finished', status: 'failed', error: err.message });
@@ -429,9 +440,11 @@ try {
       max_retries: maxRetries,
       concurrency,
     });
+    logScannerStep('workers_starting');
 
     const workers = Array.from({ length: concurrency }, (_, index) => createWorker(index + 1));
     await Promise.all(workers);
+    logScannerStep('workers_finished');
 
     const linkStatusCache = new Map();
     const enrichedLinks = [];
@@ -516,6 +529,8 @@ try {
       orphan_pages: orphanPages,
     };
 
+    logScannerStep('result_built');
+
     emit({
       type: 'scan_finished',
       status: 'done',
@@ -526,6 +541,9 @@ try {
     });
 
     emit({ type: 'scan_result', result });
+    logScannerStep('scan_complete');
+    logger.info('Scanner finished');
+    console.log('Scanner finished');
     process.exit(0);
   } catch (error) {
     scanLogger.error('scan_error', { error: error?.message || String(error), stack: error?.stack || null });

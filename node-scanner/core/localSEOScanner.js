@@ -6,6 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { createStructuredLogger } = require('../utils/structuredLogger');
+const logger = require('../utils/structuredLogger');
+
+logger.info("Scanner process started");
+console.log("Scanner process started");
 const { normalizeUrl } = require('../utils/urlUtils');
 const { decodeHtmlEntities, sleep, stripTags, toPositiveInt } = require('../utils/runtimeUtils');
 
@@ -17,6 +21,11 @@ const rootLogger = createStructuredLogger({
 
 function log(message) {
   rootLogger.info('scanner_message', { text: message });
+}
+
+function logScannerStep(step) {
+  rootLogger.info('Scanner step', { step });
+  console.log('Scanner step:', step);
 }
 
 
@@ -45,7 +54,7 @@ function handleFatalError(type, err) {
   };
 
   markEventEmission(event.type);
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 
   setTimeout(() => {
     process.exit(1);
@@ -53,10 +62,12 @@ function handleFatalError(type, err) {
 }
 
 process.on('uncaughtException', (err) => {
+  console.error("Uncaught exception:", err);
   handleFatalError('uncaught_exception', err);
 });
 
 process.on('unhandledRejection', (err) => {
+  console.error("Unhandled rejection:", err);
   handleFatalError('unhandled_rejection', err);
 });
 
@@ -230,7 +241,7 @@ function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSiz
 
   logger.info('crawl_progress', event);
   markEventEmission(event.type);
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 
   writeProgress(resultDir, {
     current: scannedPages,
@@ -256,7 +267,7 @@ function publishPageScanned({ logger, url, status, altCount, headingCount, error
 
   logger.info('page_scanned', event);
   markEventEmission(event.type);
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 }
 
 function createFingerprint({ title = '', h1 = [], content = '', html = '' }) {
@@ -326,6 +337,7 @@ let options;
 
 try {
   options = JSON.parse(process.argv[2]);
+  logScannerStep('options_parsed');
 } catch (err) {
   rootLogger.error('scan_error', { error: 'Ungültige Optionen', details: err.message });
   console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
@@ -370,6 +382,7 @@ if (!fs.existsSync(resultDir)) {
   }, 10000);
   workerHeartbeatWatch.unref();
 
+  logScannerStep('scan_started');
   logger.info('scan_started', {
     url: options.url,
     checks,
@@ -407,6 +420,7 @@ if (!fs.existsSync(resultDir)) {
   let absoluteUrls = [];
 
   try {
+    logScannerStep('crawl_links_started');
     absoluteUrls = await crawlLinks(seedPage, options.url, {
       ...options,
       scan_id: scanId,
@@ -434,6 +448,7 @@ if (!fs.existsSync(resultDir)) {
     await seedPage.close();
   }
 
+  logScannerStep('crawl_links_finished');
   if (absoluteUrls.length === 1 && absoluteUrls[0] === options.url) {
     logger.warn('crawl_progress', { url: options.url, warning: 'only_seed_url_discovered' });
   }
@@ -740,6 +755,7 @@ if (!fs.existsSync(resultDir)) {
   try {
     const queueItems = absoluteUrls.map((url, position) => ({ url, position }));
 
+    logScannerStep('page_scanning_started');
     await asyncPool(maxParallelPages, queueItems, async (item) => {
       if (failedByTimeout || fs.existsSync(abortPath) || hasExceededMaxScanTime()) {
         return;
@@ -755,6 +771,7 @@ if (!fs.existsSync(resultDir)) {
     clearTimeout(scanTimeoutHandle);
   }
 
+  logScannerStep('page_scanning_finished');
   if (fs.existsSync(abortPath)) {
     logger.warn('scan_error', {
       reason: 'scan_aborted',
@@ -805,5 +822,8 @@ if (!fs.existsSync(resultDir)) {
 
   clearInterval(workerHeartbeatWatch);
   await browser.close();
+  logScannerStep('scan_complete');
+  logger.info('Scanner finished');
+  console.log('Scanner finished');
   process.exit(0);
 })();

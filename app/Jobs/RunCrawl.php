@@ -48,14 +48,18 @@ class RunCrawl implements ShouldQueue
             'checks' => ['heading', 'alt', 'status'],
         ];
 
-        $process = new Process([
+        $command = [
             'node',
             base_path('node-scanner/core/crawler.js'),
             json_encode($options, JSON_UNESCAPED_SLASHES),
-        ]);
+        ];
 
+        $process = new Process($command);
         $process->setTimeout(null);
-        $process->run();
+
+        $process->run(function ($type, $buffer) {
+            Log::info('NODE', ['output' => $buffer]);
+        });
 
         if (!$process->isSuccessful()) {
             Log::error('Crawl Node Prozess fehlgeschlagen', [

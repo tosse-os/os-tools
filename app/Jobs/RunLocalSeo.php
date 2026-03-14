@@ -47,15 +47,19 @@ class RunLocalSeo implements ShouldQueue
             'city' => $this->city,
         ];
 
-        $process = new \Symfony\Component\Process\Process([
+        $command = [
             'node',
             base_path('node-scanner/core/localSEOScanner.js'),
             json_encode($options),
             $this->reportId
-        ]);
+        ];
 
+        $process = new Process($command);
         $process->setTimeout(null);
-        $process->run();
+
+        $process->run(function ($type, $buffer) {
+            Log::info('NODE', ['output' => $buffer]);
+        });
 
         if (!$process->isSuccessful()) {
 

@@ -78,7 +78,13 @@ function createStructuredLogger(options = {}) {
   return logger;
 }
 
+const defaultLogger = createStructuredLogger();
+
 module.exports = {
   createStructuredLogger,
   normalizeLevel,
+  info: (...args) => defaultLogger.info(...args),
+  warn: (...args) => defaultLogger.warn(...args),
+  error: (...args) => defaultLogger.error(...args),
+  debug: (...args) => defaultLogger.debug(...args),
 };
