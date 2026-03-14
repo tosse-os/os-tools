@@ -805,4 +805,5 @@ if (!fs.existsSync(resultDir)) {
 
   clearInterval(workerHeartbeatWatch);
   await browser.close();
+  process.exit(0);
 })();

@@ -526,6 +526,7 @@ try {
     });
 
     emit({ type: 'scan_result', result });
+    process.exit(0);
   } catch (error) {
     scanLogger.error('scan_error', { error: error?.message || String(error), stack: error?.stack || null });
     emit({
