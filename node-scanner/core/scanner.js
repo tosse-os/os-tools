@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
+const crypto = require('crypto');
 const { URL } = require('url');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
@@ -28,6 +29,72 @@ function emit(event) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hashContent(content) {
+  return crypto.createHash('sha256').update(content || '').digest('hex');
+}
+
+function isRedirectStatus(code) {
+  return [301, 302, 307, 308].includes(Number(code));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveLinkStatus(targetUrl, maxRedirects = 6) {
+  const chain = [];
+  let current = targetUrl;
+
+  for (let index = 0; index < maxRedirects; index += 1) {
+    let response;
+    try {
+      response = await fetchWithTimeout(current, { method: 'HEAD', redirect: 'manual' });
+
+      if ([400, 403, 405].includes(response.status)) {
+        response = await fetchWithTimeout(current, { method: 'GET', redirect: 'manual' });
+      }
+    } catch {
+      return {
+        status_code: null,
+        redirect_target: null,
+        redirect_chain: chain,
+        redirect_chain_length: chain.length,
+      };
+    }
+
+    const statusCode = Number(response.status);
+    const location = response.headers.get('location');
+    const resolvedNext = location ? normalizeUrl(location, current) : null;
+
+    if (isRedirectStatus(statusCode) && resolvedNext) {
+      chain.push({ url: current, status_code: statusCode, target: resolvedNext });
+      current = resolvedNext;
+      continue;
+    }
+
+    return {
+      status_code: statusCode,
+      redirect_target: chain.length > 0 ? current : null,
+      redirect_chain: chain,
+      redirect_chain_length: chain.length,
+    };
+  }
+
+  return {
+    status_code: null,
+    redirect_target: current,
+    redirect_chain: chain,
+    redirect_chain_length: chain.length,
+  };
 }
 
 let options;
@@ -59,6 +126,7 @@ try {
   const linkGraph = new Map();
   const pageDepth = new Map([[startUrl, 0]]);
   const pageResults = [];
+  const crawledLinks = [];
 
   let scannedPages = 0;
   let finished = false;
@@ -152,13 +220,27 @@ try {
         type: 'page_scanned',
         url,
         status: null,
+        status_code: null,
+        title: null,
+        meta_description: null,
+        canonical: null,
+        h1_count: 0,
         alt_count: 0,
+        alt_missing_count: 0,
         heading_count: 0,
+        image_count: 0,
+        internal_links: 0,
+        external_links: 0,
         error: null,
+        canonical_url: null,
+        content_hash: null,
+        text_hash: null,
       };
 
       try {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout * 1000 });
+        const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout * 1000 });
+        pageResult.status_code = response?.status() || null;
+        pageResult.status = pageResult.status_code !== null ? String(pageResult.status_code) : null;
 
         if (checks.includes('status')) {
           const statusResult = await statusCheck(page, url);
@@ -179,29 +261,134 @@ try {
             : Number(headingResult?.count ?? 0);
         }
 
-        const links = await page.$$eval('a[href]', (anchors) =>
-          anchors
-            .map((anchor) => anchor.getAttribute('href') || anchor.href)
-            .filter(Boolean)
-            .map((href) => href.trim())
-            .filter((href) => !href.startsWith('#'))
-            .filter((href) => !href.startsWith('mailto:'))
-            .filter((href) => !href.startsWith('tel:'))
-            .filter((href) => !href.startsWith('javascript:'))
-        );
+        const {
+          links,
+          canonicalUrl,
+          cleanedContent,
+          title,
+          metaDescription,
+          h1Count,
+          headingCount,
+          imageCount,
+          missingAlt,
+          internalLinks,
+          externalLinks,
+          textContent,
+        } = await page.evaluate(() => {
+          const anchors = Array.from(document.querySelectorAll('a[href]'));
+          const linkData = anchors
+            .map((anchor) => {
+              const rawHref = anchor.getAttribute('href') || anchor.href || '';
+              const href = rawHref.trim();
 
-        for (const rawLink of links) {
+              if (
+                !href
+                || href.startsWith('#')
+                || href.startsWith('mailto:')
+                || href.startsWith('tel:')
+                || href.startsWith('javascript:')
+              ) {
+                return null;
+              }
+
+              return {
+                href,
+                anchor_text: (anchor.textContent || '').trim().slice(0, 1000),
+                nofollow: /nofollow/i.test(anchor.getAttribute('rel') || ''),
+              };
+            })
+            .filter(Boolean);
+
+          const canonicalElement = document.querySelector('link[rel="canonical"]');
+          const canonicalHref = canonicalElement ? (canonicalElement.getAttribute('href') || '').trim() : null;
+          const titleText = document.title || null;
+          const metaDesc = document.querySelector('meta[name="description"]')?.content || null;
+          const h1 = document.querySelectorAll('h1').length;
+          const headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6').length;
+          const images = Array.from(document.querySelectorAll('img'));
+          const missingAltCount = images.filter((img) => !img.alt || img.alt.trim() === '').length;
+          const internalCount = linkData.filter((link) => {
+            try {
+              return new URL(link.href, location.href).hostname === location.hostname;
+            } catch {
+              return false;
+            }
+          }).length;
+          const externalCount = linkData.filter((link) => {
+            try {
+              return new URL(link.href, location.href).hostname !== location.hostname;
+            } catch {
+              return false;
+            }
+          }).length;
+          const text = document.body?.innerText || '';
+
+          const clone = document.documentElement.cloneNode(true);
+          clone.querySelectorAll('script, style, noscript').forEach((node) => node.remove());
+
+          return {
+            links: linkData,
+            canonicalUrl: canonicalHref || null,
+            cleanedContent: clone.outerHTML || '',
+            title: titleText,
+            metaDescription: metaDesc,
+            h1Count: h1,
+            headingCount: headings,
+            imageCount: images.length,
+            missingAlt: missingAltCount,
+            internalLinks: internalCount,
+            externalLinks: externalCount,
+            textContent: text,
+          };
+        });
+
+        pageResult.title = title;
+        pageResult.meta_description = metaDescription;
+        pageResult.h1_count = Number(h1Count || 0);
+        pageResult.heading_count = Number(headingCount || 0);
+        pageResult.image_count = Number(imageCount || 0);
+        pageResult.alt_missing_count = Number(missingAlt || 0);
+        pageResult.alt_count = pageResult.alt_missing_count;
+        pageResult.internal_links = Number(internalLinks || 0);
+        pageResult.external_links = Number(externalLinks || 0);
+        pageResult.canonical = normalizeUrl(canonicalUrl, url) || null;
+        pageResult.canonical_url = normalizeUrl(canonicalUrl, url) || null;
+        pageResult.content_hash = hashContent(cleanedContent);
+        pageResult.text_hash = crypto.createHash('md5').update(textContent || '').digest('hex');
+
+        for (const linkData of links) {
+          const rawLink = linkData.href;
           const nextDepth = depth + 1;
           const normalized = normalizeUrl(rawLink, url);
           if (!normalized) {
             continue;
           }
 
+          let parsedLink;
+          try {
+            parsedLink = new URL(normalized);
+          } catch {
+            continue;
+          }
+
+          const linkType = normalizeHost(parsedLink.hostname) === startHost ? 'internal' : 'external';
+
+          crawledLinks.push({
+            source_url: url,
+            target_url: normalized,
+            link_type: linkType,
+            anchor_text: linkData.anchor_text || null,
+            nofollow: linkData.nofollow === true,
+          });
+
           if (!linkGraph.has(url)) {
             linkGraph.set(url, new Set());
           }
           linkGraph.get(url).add(normalized);
-          pushUrl(normalized, url, nextDepth);
+
+          if (linkType === 'internal') {
+            pushUrl(normalized, url, nextDepth);
+          }
         }
       } catch (error) {
         let retryError = error;
@@ -262,20 +449,87 @@ try {
     const workers = Array.from({ length: concurrency }, (_, index) => createWorker(index + 1));
     await Promise.all(workers);
 
+    const linkStatusCache = new Map();
+    const enrichedLinks = [];
+
+    for (const link of crawledLinks) {
+      if (!linkStatusCache.has(link.target_url)) {
+        // Resolve once per target to keep the analysis lightweight.
+        // eslint-disable-next-line no-await-in-loop
+        linkStatusCache.set(link.target_url, await resolveLinkStatus(link.target_url));
+      }
+
+      enrichedLinks.push({
+        ...link,
+        ...(linkStatusCache.get(link.target_url) || {
+          status_code: null,
+          redirect_target: null,
+          redirect_chain_length: 0,
+          redirect_chain: [],
+        }),
+      });
+    }
+
+    const incomingCounts = new Map();
+    const outgoingCounts = new Map();
+
+    for (const link of enrichedLinks) {
+      if (link.link_type !== 'internal') {
+        continue;
+      }
+
+      outgoingCounts.set(link.source_url, (outgoingCounts.get(link.source_url) || 0) + 1);
+      incomingCounts.set(link.target_url, (incomingCounts.get(link.target_url) || 0) + 1);
+    }
+
     const pages = pageResults.map((entry) => ({
       url: entry.url,
       status: entry.status,
+      status_code: entry.status_code,
+      title: entry.title,
+      meta_description: entry.meta_description,
+      canonical: entry.canonical,
+      h1_count: entry.h1_count,
       alt_count: entry.alt_count,
+      alt_missing_count: entry.alt_missing_count,
       heading_count: entry.heading_count,
+      image_count: entry.image_count,
+      internal_links: entry.internal_links,
+      external_links: entry.external_links,
       error: entry.error,
       depth: entry.depth,
+      canonical_url: entry.canonical_url,
+      content_hash: entry.content_hash,
+      text_hash: entry.text_hash,
+      internal_links_in: incomingCounts.get(entry.url) || 0,
+      internal_links_out: outgoingCounts.get(entry.url) || 0,
       outgoing_links: linkGraph.has(entry.url) ? linkGraph.get(entry.url).size : 0,
     }));
+
+    const duplicateGroups = Object.entries(
+      pages.reduce((acc, pageEntry) => {
+        if (!pageEntry.content_hash) {
+          return acc;
+        }
+        acc[pageEntry.content_hash] = acc[pageEntry.content_hash] || [];
+        acc[pageEntry.content_hash].push(pageEntry.url);
+        return acc;
+      }, {})
+    )
+      .filter(([, urls]) => urls.length > 1)
+      .map(([content_hash, urls]) => ({ content_hash, urls }));
+
+    const orphanPages = pages
+      .filter((pageEntry) => Number(pageEntry.internal_links_in || 0) === 0 && Number(pageEntry.depth || 0) > 0)
+      .map((pageEntry) => pageEntry.url);
 
     const result = {
       url: startUrl,
       pages_crawled: scannedPages,
       link_graph_pages: pages,
+      crawl_links: enrichedLinks,
+      duplicate_content_groups: duplicateGroups,
+      orphan_pages: orphanPages,
     };
 
     emit({

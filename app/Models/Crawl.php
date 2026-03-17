@@ -33,4 +33,9 @@ class Crawl extends Model
     {
         return $this->hasMany(CrawlPage::class);
     }
+
+    public function links()
+    {
+        return $this->hasMany(CrawlLink::class);
+    }
 }
