@@ -6,10 +6,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\View\View;
+use SplFileObject;
 
 class LogController extends Controller
 {
     private const ALLOWED_LEVELS = ['debug', 'info', 'notice', 'warning', 'error', 'critical'];
+    private const MAX_LINES_PER_LOG = 200;
 
     /** @return array<int, array<string, mixed>> */
     protected function readLogs(?string $level = null): array
@@ -38,7 +40,21 @@ class LogController extends Controller
     /** @return array<int, array<string, mixed>> */
     private function parseLogFile(string $path): array
     {
-        $lines = @file($path) ?: [];
+        $lines = [];
+
+        if (! is_readable($path)) {
+            return [];
+        }
+
+        $file = new SplFileObject($path, 'r');
+        $file->seek(PHP_INT_MAX);
+        $lastLine = $file->key();
+
+        for ($i = max(0, $lastLine - self::MAX_LINES_PER_LOG); $i <= $lastLine; $i++) {
+            $file->seek($i);
+            $lines[] = (string) $file->current();
+        }
+
         $entries = [];
         $current = null;
         $source = basename($path);
