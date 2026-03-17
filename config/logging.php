@@ -118,6 +118,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+
+        'scanner' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/scanner.log'),
+            'level' => env('LOG_SCANNER_LEVEL', 'warning'),
+            'days' => env('LOG_SCANNER_DAYS', 7),
+            'replace_placeholders' => true,
+        ],
         'null' => [
             'driver' => 'monolog',
             'handler' => NullHandler::class,

@@ -41,6 +41,8 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    'local_seo_scanner_debug' => (bool) env('LOCAL_SEO_SCANNER_DEBUG', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL
