@@ -17,11 +17,6 @@ class CrawlerController extends Controller
     return view('crawler.form');
   }
 
-  public function form()
-  {
-    return $this->index();
-  }
-
   public function run(Request $request)
   {
     $request->validate([
@@ -60,12 +55,6 @@ class CrawlerController extends Controller
     return response()->json([
       'reportId' => $report->id
     ]);
-  }
-
-
-  public function start(Request $request)
-  {
-    return $this->run($request);
   }
 
   private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
