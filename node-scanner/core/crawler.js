@@ -1,5 +1,4 @@
 const puppeteer = require('puppeteer');
-const path = require('path');
 const { URL } = require('url');
 const altCheck = require('../checks/altCheck');
 const headingCheck = require('../checks/headingCheck');
@@ -8,14 +7,12 @@ const { createStructuredLogger } = require('../utils/structuredLogger');
 const { normalizeHost, normalizeUrl } = require('../utils/urlUtils');
 const { fetchWithTimeout, hashContent, resolveLinkStatus, sleep, toPositiveInt } = require('../utils/runtimeUtils');
 
-const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 const logger = createStructuredLogger({
-  logFilePath: logFile,
-  output: process.stderr,
+  stdout: process.stdout,
 });
 
 function emit(event) {
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 }
 
 let options;

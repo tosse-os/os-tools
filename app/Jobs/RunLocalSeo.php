@@ -55,7 +55,55 @@ class RunLocalSeo implements ShouldQueue
         ]);
 
         $process->setTimeout(null);
-        $process->run();
+        $stdoutBuffer = '';
+        $stderrBuffer = '';
+
+        $flushBuffer = function (string &$buffer, string $channel, bool $flushAll = false): void {
+            $lines = preg_split('/\r?\n/', $buffer) ?: [];
+            if ($flushAll) {
+                $buffer = '';
+            } else {
+                $buffer = array_pop($lines) ?? '';
+            }
+
+            foreach ($lines as $line) {
+                $trimmed = trim($line);
+                if ($trimmed == '') {
+                    continue;
+                }
+
+                $payload = json_decode($trimmed, true);
+                if (is_array($payload)) {
+                    Log::info('Local SEO Node event', [
+                        'report_id' => $this->reportId,
+                        'channel' => $channel,
+                        'event' => $payload,
+                    ]);
+
+                    continue;
+                }
+
+                Log::info('Local SEO Node output', [
+                    'report_id' => $this->reportId,
+                    'channel' => $channel,
+                    'output' => $trimmed,
+                ]);
+            }
+        };
+
+        $process->run(function (string $type, string $buffer) use (&$stdoutBuffer, &$stderrBuffer, $flushBuffer): void {
+            if ($type === Process::ERR) {
+                $stderrBuffer .= $buffer;
+                $flushBuffer($stderrBuffer, 'stderr');
+                return;
+            }
+
+            $stdoutBuffer .= $buffer;
+            $flushBuffer($stdoutBuffer, 'stdout');
+        });
+
+        $flushBuffer($stdoutBuffer, 'stdout', true);
+        $flushBuffer($stderrBuffer, 'stderr', true);
 
         if (!$process->isSuccessful()) {
 
