@@ -8,7 +8,6 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CrawlController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\QueueController;
-use App\Http\Controllers\ScanController;
 use App\Http\Controllers\AdminSettingsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\AnalysisController;
@@ -25,8 +24,8 @@ Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 |--------------------------------------------------------------------------
 */
 
-Route::get('/crawler', [CrawlerController::class, 'form'])->name('crawler.form');
-Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.start');
+Route::get('/crawl', [CrawlerController::class, 'index'])->name('crawler.form');
+Route::post('/crawl', [CrawlerController::class, 'run'])->name('crawler.start');
 
 /*
 |--------------------------------------------------------------------------
@@ -37,23 +36,6 @@ Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.star
 Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
 Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
 
-/*
-|--------------------------------------------------------------------------
-| MULTI SCAN / LIVE SCANNER
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
-Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
-
-Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
-Route::get('/scans/{scan}/progress', [ScanController::class, 'progress'])->name('scans.progress');
-Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
-
-Route::post('/multiscan/abort', [ScanController::class, 'abort']);
-
-Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
-Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
 Route::get('/crawls', [CrawlController::class, 'index'])->name('crawls.index');
 Route::get('/crawls/{crawl}', [CrawlController::class, 'show'])->name('crawls.show');
 Route::post('/crawls/{crawl}/rerun', [CrawlController::class, 'rerun'])->name('crawls.rerun');
