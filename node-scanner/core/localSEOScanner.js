@@ -9,10 +9,8 @@ const { createStructuredLogger } = require('../utils/structuredLogger');
 const { normalizeUrl } = require('../utils/urlUtils');
 const { decodeHtmlEntities, sleep, stripTags, toPositiveInt } = require('../utils/runtimeUtils');
 
-const logFile = path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
 const rootLogger = createStructuredLogger({
-  logFilePath: logFile,
-  output: process.stderr,
+  stdout: process.stdout,
 });
 
 function log(message) {
@@ -184,7 +182,7 @@ function publishCrawlProgress({ logger, resultDir, total, scannedPages, queueSiz
   };
 
   logger.info('crawl_progress', event);
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 
   writeProgress(resultDir, {
     current: scannedPages,
@@ -209,7 +207,7 @@ function publishPageScanned({ logger, url, status, altCount, headingCount, error
   };
 
   logger.info('page_scanned', event);
-  process.stdout.write(`${JSON.stringify(event)}\n`);
+  console.log(JSON.stringify(event));
 }
 
 function createFingerprint({ title = '', h1 = [], content = '', html = '' }) {

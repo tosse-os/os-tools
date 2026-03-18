@@ -17,14 +17,15 @@ function createStructuredLogger(options = {}) {
   const logLevel = normalizeLevel(options.level || process.env.SCAN_LOG_LEVEL || 'info');
   const logThreshold = LEVELS[logLevel];
   const stdout = options.stdout || process.stdout;
-  const stderr = options.stderr || process.stderr;
-  const logFilePath = options.logFilePath || path.resolve(__dirname, '..', '..', 'storage', 'logs', 'node-scanner.log');
+  const logFilePathResolver = options.logFilePathResolver || (() => {
+    const date = new Date().toISOString().slice(0, 10);
+    return path.resolve(__dirname, '..', '..', 'storage', 'logs', `node-scanner-${date}.log`);
+  });
   const baseFields = options.baseFields || {};
 
-  const getOutputForLevel = (level) => (level === 'error' ? stderr : stdout);
-
   const writeLine = (line, level) => {
-    const output = getOutputForLevel(level);
+    const output = stdout;
+    const logFilePath = logFilePathResolver(level);
 
     if (output && typeof output.write === 'function') {
       output.write(`${line}\n`);
@@ -66,8 +67,7 @@ function createStructuredLogger(options = {}) {
       createStructuredLogger({
         level: logLevel,
         stdout,
-        stderr,
-        logFilePath,
+        logFilePathResolver,
         baseFields: {
           ...baseFields,
           ...childFields,

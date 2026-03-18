@@ -12,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Symfony\Component\Process\Process;
 
@@ -56,6 +57,7 @@ class RunCrawl implements ShouldQueue
         }
 
         $workers = [];
+        $workerBuffers = [];
         $workerCount = $useRedis ? max(1, (int) env('CRAWLER_WORKERS', 2)) : 1;
         for ($i = 0; $i < $workerCount; $i++) {
             $process = new Process([
@@ -73,6 +75,7 @@ class RunCrawl implements ShouldQueue
             $process->setTimeout(null);
             $process->start();
             $workers[] = $process;
+            $workerBuffers[spl_object_id($process)] = ['stdout' => '', 'stderr' => ''];
         }
 
         if ($useRedis) {
@@ -89,10 +92,16 @@ class RunCrawl implements ShouldQueue
             $consumed = $useRedis ? $consumer->consume($crawl->id, 1) : false;
             if ($consumed) {
                 $idleCycles = 0;
+                foreach ($workers as $worker) {
+                    $this->drainWorkerOutput($worker, $crawl->id, $workerBuffers[spl_object_id($worker)]);
+                }
                 continue;
             }
 
             $idleCycles++;
+            foreach ($workers as $worker) {
+                $this->drainWorkerOutput($worker, $crawl->id, $workerBuffers[spl_object_id($worker)]);
+            }
             $pending = DB::table('crawl_queue')->where('crawl_id', $crawl->id)->where('status', 'pending')->exists();
             if (!$pending && $idleCycles > 5) {
                 break;
@@ -119,11 +128,55 @@ class RunCrawl implements ShouldQueue
 
         foreach ($workers as $worker) {
             $worker->stop(1);
+            $this->drainWorkerOutput($worker, $crawl->id, $workerBuffers[spl_object_id($worker)], true);
         }
 
         Report::whereKey($this->crawlId)->update([
             'status' => 'done',
             'finished_at' => now(),
         ]);
+    }
+
+    private function drainWorkerOutput(Process $worker, string $crawlId, array &$buffers, bool $flush = false): void
+    {
+        $buffers['stdout'] .= $worker->getIncrementalOutput();
+        $buffers['stderr'] .= $worker->getIncrementalErrorOutput();
+
+        $this->logBufferedLines($buffers['stdout'], 'stdout', $crawlId, $flush);
+        $this->logBufferedLines($buffers['stderr'], 'stderr', $crawlId, $flush);
+    }
+
+    private function logBufferedLines(string &$buffer, string $channel, string $crawlId, bool $flush = false): void
+    {
+        $lines = preg_split('/\r?\n/', $buffer) ?: [];
+        if ($flush) {
+            $buffer = '';
+        } else {
+            $buffer = array_pop($lines) ?? '';
+        }
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ($trimmed === '') {
+                continue;
+            }
+
+            $payload = json_decode($trimmed, true);
+            if (is_array($payload)) {
+                Log::info('Crawler worker event', [
+                    'crawl_id' => $crawlId,
+                    'channel' => $channel,
+                    'event' => $payload,
+                ]);
+
+                continue;
+            }
+
+            Log::info('Crawler worker output', [
+                'crawl_id' => $crawlId,
+                'channel' => $channel,
+                'output' => $trimmed,
+            ]);
+        }
     }
 }
