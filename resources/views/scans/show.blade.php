@@ -28,7 +28,7 @@
 
     <div x-show="status === 'failed'" class="mt-3 p-3 rounded bg-red-100 text-red-700 flex items-center justify-between">
       <span>⚠ Scan failed</span>
-      <form action="{{ route('scan.form') }}" method="GET">
+      <form action="{{ url('/crawl') }}" method="GET">
         <button type="submit" class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">
           Retry
         </button>
@@ -103,7 +103,7 @@
         this.intervalRef = setInterval(() => this.fetchProgress(), 3000);
       },
       async fetchProgress() {
-        const response = await fetch(`/scans/${this.scanId}/progress?ts=${Date.now()}`);
+        const response = await fetch(`/crawls/${this.scanId}/progress?ts=${Date.now()}`);
         const data = await response.json();
 
         this.status = data.status ?? this.status;

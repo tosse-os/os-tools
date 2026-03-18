@@ -12,12 +12,17 @@ use Illuminate\Support\Str;
 
 class CrawlerController extends Controller
 {
-  public function form()
+  public function index()
   {
     return view('crawler.form');
   }
 
-  public function start(Request $request)
+  public function form()
+  {
+    return $this->index();
+  }
+
+  public function run(Request $request)
   {
     $request->validate([
       'url' => 'required|url'
@@ -55,6 +60,12 @@ class CrawlerController extends Controller
     return response()->json([
       'reportId' => $report->id
     ]);
+  }
+
+
+  public function start(Request $request)
+  {
+    return $this->run($request);
   }
 
   private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
