@@ -12,6 +12,16 @@ use Illuminate\Support\Str;
 
 class CrawlerController extends Controller
 {
+  public function index()
+  {
+    return $this->form();
+  }
+
+  public function run(Request $request)
+  {
+    return $this->start($request);
+  }
+
   public function form()
   {
     return view('crawler.form');

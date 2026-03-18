@@ -103,7 +103,7 @@
         this.intervalRef = setInterval(() => this.fetchProgress(), 3000);
       },
       async fetchProgress() {
-        const response = await fetch(`/scans/${this.scanId}/progress?ts=${Date.now()}`);
+        const response = await fetch(`/crawls/${this.scanId}/progress?ts=${Date.now()}`);
         const data = await response.json();
 
         this.status = data.status ?? this.status;

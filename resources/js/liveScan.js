@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
 
-    const res = await fetch('/scan', {
+    const res = await fetch('/crawl', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     pollingInterval = setInterval(async () => {
-      const progressRes = await fetch(`/scans/${scanId}/progress?event_cursor=${eventCursor}&ts=${Date.now()}`);
+      const progressRes = await fetch(`/crawls/${scanId}/progress?event_cursor=${eventCursor}&ts=${Date.now()}`);
       const progress = await progressRes.json();
 
       progressEl.textContent = 'Scanning site...';
