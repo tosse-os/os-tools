@@ -1,890 +1,2500 @@
-    if (response) {
-      result.status = response.status();
-      result.finalUrl = response.url();
-      result.redirected = result.finalUrl && result.finalUrl !== url;
-    } else {
-      result.status = 'unknown';
-    }
-  } catch (error) {
-    result.status = 'error';
-    result.error = error.message;
-  }
+        foreach ($links as $link) {
+            if ((int) $link->status_code >= 400) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'type' => 'broken_link',
+                    'url' => $link->target_url,
+                    'meta' => [
+                        'source_url' => $link->source_url,
+                        'status_code' => (int) $link->status_code,
+                    ],
+                    'created_at' => $now,
+                ];
+            }
 
-  return result;
-};
-
-
-
------ node-scanner/core/localSeoScanner.js -----
-
-const puppeteer = require('puppeteer')
-const fs = require('fs')
-const path = require('path')
-
-const options = JSON.parse(process.argv[2])
-const reportId = process.argv[3]
-
-const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', reportId)
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true })
-}
-
-const progressPath = path.join(resultDir, 'progress.json')
-
-const updateProgress = (status) => {
-  fs.writeFileSync(progressPath, JSON.stringify({
-    current: 1,
-    total: 1,
-    status
-  }))
-}
-
-const rateScore = (score) => {
-  if (score < 50) return { level: 'critical', label: 'Kritisch', color: 'red' }
-  if (score < 70) return { level: 'weak', label: 'Schwach', color: 'orange' }
-  if (score < 85) return { level: 'good', label: 'Gut', color: 'blue' }
-  return { level: 'excellent', label: 'Sehr gut', color: 'green' }
-}
-
-function evaluateModule(moduleKey, checks, weights, messages, priorityConfig = {}) {
-  let score = 0
-  const missing = []
-  const priorities = []
-
-  for (const rule in checks) {
-    if (checks[rule]) {
-      score += weights[rule] || 0
-    } else {
-      if (messages[rule]) {
-        missing.push(messages[rule])
-      }
-
-      if (priorityConfig[rule]) {
-        priorities.push({
-          code: `${moduleKey}_${rule}`,
-          severity: priorityConfig[rule].severity,
-          category: priorityConfig[rule].category,
-          message: messages[rule]
-        })
-      }
-    }
-  }
-
-  const max = Object.values(weights).reduce((a, b) => a + b, 0)
-
-  return {
-    score,
-    max,
-    checks,
-    weights,
-    missing,
-    priorities
-  }
-}
-
-; (async () => {
-
-  updateProgress('running')
-
-  const browser = await puppeteer.launch({ headless: true })
-  const page = await browser.newPage()
-
-  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
-
-  const title = await page.title()
-  const h1 = await page.$$eval('h1', els => els.map(e => e.innerText))
-  const bodyText = await page.evaluate(() => document.body.innerText)
-
-  const jsonLd = await page.$$eval(
-    'script[type="application/ld+json"]',
-    scripts => scripts.map(s => s.innerText)
-  )
-
-  const keyword = options.keyword.toLowerCase()
-  const city = options.city.toLowerCase()
-
-  let score = 0
-  let priorities = []
-  const breakdown = {}
-
-  // ================= TITLE =================
-
-  const titleLower = title.toLowerCase()
-
-  const titleResult = evaluateModule(
-    'title',
-    {
-      keyword_present: titleLower.includes(keyword),
-      city_present: titleLower.includes(city),
-      keyword_city_combination:
-        titleLower.includes(`${keyword} ${city}`) ||
-        titleLower.includes(`${city} ${keyword}`)
-    },
-    {
-      keyword_present: 10,
-      city_present: 10,
-      keyword_city_combination: 5
-    },
-    {
-      keyword_present: 'Keyword fehlt im Title',
-      city_present: 'Stadt fehlt im Title',
-      keyword_city_combination: 'Keyword + Stadt Kombination fehlt'
-    },
-    {
-      keyword_present: { severity: 'high', category: 'title' },
-      city_present: { severity: 'medium', category: 'title' }
-    }
-  )
-
-  breakdown.title = titleResult
-  score += titleResult.score
-  priorities = priorities.concat(titleResult.priorities)
-
-  // ================= H1 =================
-
-  const h1Text = h1.join(' ').toLowerCase()
-
-  const h1Result = evaluateModule(
-    'h1',
-    {
-      exists: h1.length > 0,
-      keyword_present: h1Text.includes(keyword),
-      city_present: h1Text.includes(city)
-    },
-    {
-      exists: 5,
-      keyword_present: 8,
-      city_present: 7
-    },
-    {
-      exists: 'Keine H1 vorhanden',
-      keyword_present: 'Keyword nicht in H1 enthalten',
-      city_present: 'Stadt nicht in H1 enthalten'
-    },
-    {
-      exists: { severity: 'high', category: 'headings' }
-    }
-  )
-
-  breakdown.h1 = h1Result
-  score += h1Result.score
-  priorities = priorities.concat(h1Result.priorities)
-
-  // ================= SCHEMA =================
-
-  let hasLocalBusiness = false
-  let hasAddress = false
-  let hasPhone = false
-
-  jsonLd.forEach(block => {
-    try {
-      const parsed = JSON.parse(block)
-      const data = Array.isArray(parsed) ? parsed : [parsed]
-
-      data.forEach(item => {
-        if (item['@type'] && item['@type'].toLowerCase().includes('localbusiness')) {
-          hasLocalBusiness = true
-          if (item.address) hasAddress = true
-          if (item.telephone) hasPhone = true
+            if ((int) $link->redirect_chain_length > 1) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'type' => 'redirect_chain',
+                    'url' => $link->target_url,
+                    'meta' => [
+                        'source_url' => $link->source_url,
+                        'redirect_chain_length' => (int) $link->redirect_chain_length,
+                    ],
+                    'created_at' => $now,
+                ];
+            }
         }
-      })
-    } catch { }
-  })
 
-  const schemaResult = evaluateModule(
-    'schema',
-    {
-      has_localbusiness: hasLocalBusiness,
-      has_address: hasAddress,
-      has_phone: hasPhone
-    },
-    {
-      has_localbusiness: 10,
-      has_address: 5,
-      has_phone: 5
-    },
-    {
-      has_localbusiness: 'LocalBusiness Schema fehlt',
-      has_address: 'Adresse fehlt im Schema',
-      has_phone: 'Telefonnummer fehlt im Schema'
-    },
-    {
-      has_localbusiness: { severity: 'high', category: 'schema' },
-      has_phone: { severity: 'medium', category: 'schema' }
-    }
-  )
-
-  breakdown.schema = schemaResult
-  score += schemaResult.score
-  priorities = priorities.concat(schemaResult.priorities)
-
-  // ================= NAP =================
-
-  const hasPhoneInHtml = bodyText.match(/\+?\d[\d\s\-\/]{6,}/)
-  const hasCityInHtml = bodyText.includes(city)
-
-  const napResult = evaluateModule(
-    'nap',
-    {
-      phone_present: !!hasPhoneInHtml,
-      city_present: hasCityInHtml
-    },
-    {
-      phone_present: 10,
-      city_present: 10
-    },
-    {
-      phone_present: 'Telefonnummer nicht im sichtbaren Inhalt gefunden',
-      city_present: 'Stadt nicht im Content gefunden'
-    },
-    {
-      phone_present: { severity: 'medium', category: 'nap' }
-    }
-  )
-
-  breakdown.nap = napResult
-  score += napResult.score
-  priorities = priorities.concat(napResult.priorities)
-
-  const result = {
-    dimension: 'local_seo',
-    score,
-    max_score: 100,
-    rating: rateScore(score),
-    breakdown,
-    priorities
-  }
-
-  fs.writeFileSync(
-    path.join(resultDir, '0.json'),
-    JSON.stringify(result, null, 2)
-  )
-
-  updateProgress('done')
-  await browser.close()
-
-})()
-
-
-
------ node-scanner/core/multiScanner.js -----
-
-const puppeteer = require('puppeteer');
-const altCheck = require('../checks/altCheck');
-const headingCheck = require('../checks/headingCheck');
-const statusCheck = require('../checks/statusCheck');
-const { collectUniqueUrls } = require('../utils/urlUtils');
-const fs = require('fs');
-const path = require('path');
-
-const logFile = path.resolve(__dirname, '..', 'storage', 'logs', 'node-scanner.log');
-
-function log(message) {
-  try {
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
-  } catch { }
-}
-
-let options;
-
-try {
-  options = JSON.parse(process.argv[2]);
-} catch (err) {
-  log(`Scanner Options Fehler: ${err.message}`);
-  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
-  process.exit(1);
-}
-
-const scanId = process.argv[3];
-
-const resultDir = path.resolve(__dirname, '..', '..', 'storage', 'scans', scanId);
-
-if (!fs.existsSync(resultDir)) {
-  fs.mkdirSync(resultDir, { recursive: true });
-}
-
-(async () => {
-
-  log(`Scan gestartet: ${options.url} (scanId=${scanId})`);
-
-  const browser = await puppeteer.launch({ headless: true });
-
-  const maxPages = options.maxPages || 20;
-  const maxConcurrency = 3;
-
-  const abortPath = path.resolve(__dirname, '..', '..', 'storage', 'app', `abort-${scanId}.flag`);
-
-  const page = await browser.newPage();
-
-  await page.setRequestInterception(true);
-
-  page.on('request', (req) => {
-    const type = req.resourceType();
-    if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-      req.abort();
-    } else {
-      req.continue();
-    }
-  });
-
-  await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-
-  const hrefs = await page.$$eval('a[href]', links =>
-    links
-      .map(link => link.getAttribute('href'))
-      .filter(Boolean)
-      .filter(href => !href.startsWith('#'))
-      .filter(href => !href.startsWith('mailto:'))
-      .filter(href => !href.startsWith('tel:'))
-      .filter(href => !href.startsWith('javascript:'))
-  );
-
-  const absoluteUrls = collectUniqueUrls(options.url, hrefs).slice(0, maxPages);
-
-  log(`URLs gefunden: ${absoluteUrls.length}`);
-
-  await page.close();
-
-  fs.writeFileSync(
-    path.join(resultDir, `progress.json`),
-    JSON.stringify({
-      current: 0,
-      total: absoluteUrls.length,
-      status: 'running'
-    })
-  );
-
-  let currentIndex = 0;
-
-  const runTask = async (url, position) => {
-
-    const page = await browser.newPage();
-
-    await page.setRequestInterception(true);
-
-    page.on('request', (req) => {
-      const type = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    let result = { url };
-
-    try {
-
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-
-      result.title = await page.title();
-
-      if (options.checks.includes('status')) {
-        result.statusCheck = await statusCheck(page, url);
-      }
-
-      if (options.checks.includes('alt')) {
-        result.altCheck = await altCheck(page);
-      }
-
-      if (options.checks.includes('heading')) {
-        result.headingCheck = await headingCheck(page);
-      }
-
-    } catch (err) {
-
-      result.error = err.message;
-
-      log(`Fehler bei ${url}: ${err.message}`);
-
-    }
-
-    fs.writeFileSync(
-      path.join(resultDir, `${position}.json`),
-      JSON.stringify(result, null, 2)
-    );
-
-    const newCurrent = position + 1;
-
-    fs.writeFileSync(
-      path.join(resultDir, `progress.json`),
-      JSON.stringify({
-        current: newCurrent,
-        total: absoluteUrls.length,
-        status: fs.existsSync(abortPath) ? 'aborted' : 'running'
-      })
-    );
-
-    await page.close();
-  };
-
-  while (currentIndex < absoluteUrls.length) {
-
-    if (fs.existsSync(abortPath)) {
-
-      log(`Scan abgebrochen: ${scanId}`);
-
-      fs.writeFileSync(
-        path.join(resultDir, `progress.json`),
-        JSON.stringify({
-          current: currentIndex,
-          total: absoluteUrls.length,
-          status: 'aborted'
-        })
-      );
-
-      break;
-    }
-
-    const batch = [];
-
-    while (batch.length < maxConcurrency && currentIndex < absoluteUrls.length) {
-
-      const position = currentIndex;
-      const url = absoluteUrls[position];
-
-      batch.push(runTask(url, position));
-
-      currentIndex++;
-    }
-
-    await Promise.allSettled(batch);
-  }
-
-  if (!fs.existsSync(abortPath)) {
-
-    log(`Scan abgeschlossen: ${scanId}`);
-
-    fs.writeFileSync(
-      path.join(resultDir, `progress.json`),
-      JSON.stringify({
-        current: absoluteUrls.length,
-        total: absoluteUrls.length,
-        status: 'done'
-      })
-    );
-  }
-
-  await browser.close();
-
-})();
-
-
-
------ node-scanner/core/scanner.js -----
-
-const puppeteer = require('puppeteer');
-const altCheck = require('../checks/altCheck');
-const headingCheck = require('../checks/headingCheck');
-const statusCheck = require('../checks/statusCheck');
-
-let options;
-try {
-  options = JSON.parse(process.argv[2]);
-} catch (err) {
-  console.error(JSON.stringify({ error: 'Ungültige Optionen', details: err.message }));
-  process.exit(1);
-}
-
-(async () => {
-  const browser = await puppeteer.launch({ headless: 'new' });
-  const page = await browser.newPage();
-
-  const results = [];
-
-  try {
-    await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-
-    const result = {
-      url: options.url,
-      title: await page.title()
-    };
-
-    if (options.checks.includes('status')) {
-      result.statusCheck = await statusCheck(page, options.url);
-      require('fs').writeFileSync('./node-scanner/textstatus.txt', JSON.stringify(result, null, 2));
-    }
-    if (options.checks.includes('alt')) {
-      result.altCheck = await altCheck(page);
-      require('fs').writeFileSync('./node-scanner/textalt.txt', JSON.stringify(result, null, 2));
-    }
-    if (options.checks.includes('heading')) {
-      result.headingCheck = await headingCheck(page);
-    }
-    //require('fs').writeFileSync('./node-scanner/final-data.txt', JSON.stringify(result, null, 2));
-    results.push(result);
-  } catch (e) {
-    results.push({ url: options.url, error: e.message });
-  }
-
-  await browser.close();
-
-// Alte Ausgabe – NICHT GEEIGNET für Laravel-Job
-// for (const row of results) {
-//   console.log(JSON.stringify(row));
-// }
-
-// Neue Ausgabe – genau ein JSON-Array
-console.log(JSON.stringify(results));
-
-})();
-
-
-
------ node-scanner/crawl/crawlLinks.js -----
-
-const { URL } = require('url');
-
-module.exports = async function crawlLinks(page, startUrl, maxUrls = 10) {
-  const visited = new Set();
-  const queue = [startUrl];
-  const origin = new URL(startUrl).origin;
-
-  while (queue.length && visited.size < maxUrls) {
-    const url = queue.shift();
-    if (visited.has(url)) continue;
-
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-      const links = await page.$$eval('a[href]', (as) =>
-        as.map((a) => a.href).filter((href) => href.startsWith('http'))
-      );
-
-      for (const link of links) {
-        const u = new URL(link);
-        if (u.origin === origin && !visited.has(link) && !queue.includes(link)) {
-          queue.push(link);
+        if (empty($issues)) {
+            return;
         }
-      }
 
-      visited.add(url);
-    } catch (e) {
-      // überspringen bei Fehler
+        $allowedColumns = array_flip(Schema::getColumnListing('crawl_issues'));
+        $payload = [];
+
+        foreach ($issues as $issue) {
+            $row = [];
+            foreach ($issue as $key => $value) {
+                if (!isset($allowedColumns[$key])) {
+                    continue;
+                }
+
+                $row[$key] = $key === 'meta' && $value !== null ? json_encode($value, JSON_UNESCAPED_SLASHES) : $value;
+            }
+
+            if (!isset($row['crawl_id'], $row['type'])) {
+                continue;
+            }
+
+            $payload[] = $row;
+        }
+
+        if (!empty($payload)) {
+            DB::table('crawl_issues')->insert($payload);
+        }
     }
-  }
 
-  return Array.from(visited).slice(0, maxUrls);
-};
+    private function persistScanEvent(string $scanId, array $payload): void
+    {
+        $eventType = $payload['type'] ?? null;
+        if (!in_array($eventType, ['crawl_progress', 'page_scanned', 'scan_finished'], true)) {
+            return;
+        }
+
+        $directory = storage_path("scans/{$scanId}");
+        if (!File::exists($directory)) {
+            File::ensureDirectoryExists($directory);
+        }
+
+        if ($eventType === 'crawl_progress') {
+            $progressPayload = [
+                'type' => 'crawl_progress',
+                'status' => $payload['status'] ?? 'running',
+                'stage' => $payload['stage'] ?? 'scanning',
+                'current' => (int) ($payload['scanned_pages'] ?? 0),
+                'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
+                'queue_size' => (int) ($payload['queue_size'] ?? 0),
+                'current_url' => $payload['current_url'] ?? null,
+            ];
+
+            File::put($directory.'/progress.json', json_encode($progressPayload));
+
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => (int) ($payload['scanned_pages'] ?? 0),
+                'pages_total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'status' => $payload['status'] ?? 'running',
+                'finished_at' => in_array(($payload['status'] ?? ''), ['done', 'failed', 'aborted'], true) ? now() : null,
+            ]);
+
+            return;
+        }
+
+        if ($eventType === 'scan_finished') {
+            $status = (string) ($payload['status'] ?? 'done');
+
+            File::put($directory.'/progress.json', json_encode([
+                'type' => 'scan_finished',
+                'status' => $status,
+                'stage' => 'finished',
+                'current' => (int) ($payload['scanned_pages'] ?? 0),
+                'total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'scanned_pages' => (int) ($payload['scanned_pages'] ?? 0),
+                'queue_size' => (int) ($payload['queue_size'] ?? 0),
+                'current_url' => null,
+            ]));
+
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => (int) ($payload['scanned_pages'] ?? 0),
+                'pages_total' => (int) ($payload['total'] ?? config('seo.max_pages', 20)),
+                'status' => $status,
+                'finished_at' => now(),
+            ]);
+
+            return;
+        }
+
+        $normalizedUrl = $this->normalizeScanUrl($payload['url'] ?? null);
+        $eventPayload = [
+            'type' => 'page_scanned',
+            'url' => $normalizedUrl,
+            'status' => $payload['status'] ?? null,
+            'alt_count' => (int) ($payload['alt_count'] ?? 0),
+            'heading_count' => (int) ($payload['heading_count'] ?? 0),
+            'error' => $payload['error'] ?? null,
+        ];
+
+        if (!empty($eventPayload['url'])) {
+            $crawlPage = CrawlPage::firstOrNew([
+                'crawl_id' => $scanId,
+                'url' => $eventPayload['url'],
+            ]);
+
+            $crawlPage->fill([
+                'status' => $eventPayload['status'],
+                'alt_count' => $eventPayload['alt_count'],
+                'heading_count' => $eventPayload['heading_count'],
+                'error' => $eventPayload['error'],
+            ]);
+
+            if (!$crawlPage->exists) {
+                $crawlPage->created_at = now();
+            }
+
+            $crawlPage->save();
+
+            if (!$crawlPage->wasRecentlyCreated) {
+                return;
+            }
+
+            File::append($directory.'/events.jsonl', json_encode($eventPayload).PHP_EOL);
+
+            Crawl::whereKey($scanId)->update([
+                'pages_scanned' => CrawlPage::where('crawl_id', $scanId)->count(),
+            ]);
+        }
+    }
 
 
+    private function normalizeScanUrl(?string $rawUrl): ?string
+    {
+        $candidate = trim((string) $rawUrl);
 
------ node-scanner/utils/urlUtils.js -----
+        if ($candidate === '') {
+            return null;
+        }
 
-const { URL } = require('url');
+        $parts = parse_url($candidate);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return $candidate;
+        }
 
-function normalizeUrl(raw, base = '') {
-  try {
-    const url = new URL(raw, base);
-    url.hash = '';
-    url.search = '';
-    return decodeURIComponent(url.href).toLowerCase().replace(/\/+$/, '');
-  } catch {
-    return null;
-  }
+        $path = $parts['path'] ?? '';
+        if ($path === '') {
+            $path = '/';
+        }
+
+        if ($path !== '/') {
+            $path = rtrim($path, '/');
+        }
+
+        $query = '';
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $queryParams);
+            $filtered = [];
+
+            foreach ($queryParams as $key => $value) {
+                if (Str::startsWith(Str::lower((string) $key), 'utm_')) {
+                    continue;
+                }
+
+                $filtered[$key] = $value;
+            }
+
+            if (!empty($filtered)) {
+                ksort($filtered);
+                $query = http_build_query($filtered);
+            }
+        }
+
+        $normalized = sprintf(
+            '%s://%s%s%s%s',
+            Str::lower((string) $parts['scheme']),
+            Str::lower((string) $parts['host']),
+            isset($parts['port']) ? ':'.$parts['port'] : '',
+            $path,
+            $query !== '' ? '?'.$query : ''
+        );
+
+        return $normalized;
+    }
+
+    private function runMultiScan(Scan $scan, ReportPersistenceService $reportPersistenceService): void
+    {
+        Log::info('[SCAN] Job gestartet', [
+            'scan_id' => $scan->id,
+            'url' => $scan->url,
+        ]);
+
+        $scan->update(['status' => 'running']);
+
+        Crawl::whereKey($scan->id)->update(['status' => 'running']);
+
+        Storage::makeDirectory("scans/{$scan->id}");
+        Storage::put("scans/{$scan->id}/progress.json", json_encode([
+            'type' => 'crawl_progress',
+            'status' => 'running',
+            'stage' => 'crawling',
+            'current' => 0,
+            'total' => (int) config('seo.max_pages', 20),
+            'scanned_pages' => 0,
+            'queue_size' => 0,
+            'current_url' => $scan->url,
+        ]));
+
+        $options = [
+            'scan_id' => $scan->id,
+            'url' => $scan->url,
+            'checks' => $this->checks,
+            'max_pages' => config('seo.max_pages', 20),
+            'max_depth' => config('seo.max_depth', 2),
+            'page_timeout' => config('seo.page_timeout', 30),
+            'max_parallel_pages' => (int) env('CRAWLER_CONCURRENCY', config('seo.crawler_concurrency', 6)),
+            'max_retries' => min((int) config('seo.max_retries', 2), 2),
+            'retry_delay' => config('seo.retry_delay', 10),
+            'max_scan_time' => config('seo.max_scan_time', 300),
+            'concurrency' => (int) env('CRAWLER_CONCURRENCY', 6),
+        ];
+
+        $command = sprintf(
+            'node %s %s %s',
+            escapeshellarg(base_path('node-scanner/core/multiScanner.js')),
+            escapeshellarg(json_encode($options, JSON_UNESCAPED_SLASHES)),
+            escapeshellarg($this->scanId)
+        );
+
+        $process = Process::fromShellCommandline($command, base_path());
+
+        $process->setTimeout(null);
+        Log::debug('[SCAN TRACE] node_process_start', [
+            'scan_id' => $scan->id,
+            'target' => 'multiScanner.js',
+        ]);
+        Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $scan->id]);
+        Log::debug('[SCAN TRACE] node_command', [
+            'scan_id' => $scan->id,
+            'command' => $process->getCommandLine(),
+        ]);
+        Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
+        $stdoutBuffer = '';
+
+        try {
+            $process->run(function (string $type, string $buffer) use ($scan, &$stdoutBuffer): void {
+                $trimmed = trim($buffer);
+
+                if ($type === Process::ERR) {
+                    Log::error('[NODE STDERR]', [
+                        'scan_id' => $scan->id,
+                        'output' => $trimmed,
+                    ]);
+
+                    return;
+                }
+
+                $stdoutBuffer .= $buffer;
+                $lines = preg_split('/\r?\n/', $stdoutBuffer) ?: [];
+                $stdoutBuffer = array_pop($lines) ?? '';
+
+                foreach ($lines as $line) {
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    $payload = json_decode($line, true);
+                    if (is_array($payload)) {
+                        $this->persistScanEvent($scan->id, $payload);
+                    }
+                }
+
+                Log::debug('[NODE STDOUT]', [
+                    'scan_id' => $scan->id,
+                    'output' => $trimmed,
+                ]);
+            });
+
+            $finalLine = trim($stdoutBuffer);
+            if ($finalLine !== '') {
+                $payload = json_decode($finalLine, true);
+                if (is_array($payload)) {
+                    $this->persistScanEvent($scan->id, $payload);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::error('[SCAN TRACE] node_process_exception', [
+                'scan_id' => $scan->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+        Log::debug('[SCAN TRACE] node_process_finished', [
+            'scan_id' => $scan->id,
+            'exit_code' => $process->getExitCode(),
+            'exit_code_text' => $process->getExitCodeText(),
+            'successful' => $process->isSuccessful(),
+        ]);
+        Log::info('[SCAN] Node Scanner finished', ['scan_id' => $scan->id]);
+
+        if (!$process->isSuccessful()) {
+            Log::error('RunScan Node Prozess fehlgeschlagen', [
+                'scan_id' => $this->scanId,
+                'error' => $process->getErrorOutput(),
+            ]);
+
+            $scan->update(['status' => 'failed']);
+            Crawl::whereKey($scan->id)->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+            return;
+        }
+
+        $report = Report::create([
+            'id' => $scan->id,
+            'url' => $scan->url,
+            'type' => 'crawler',
+            'status' => 'processing',
+        ]);
+
+        $reportPersistenceService->syncFromStorage($report);
+
+        $report->load('results');
+        app(IssueDetectionService::class)->detectAndStoreForReport($report);
+
+        $scan->update(['status' => 'done']);
+
+        Crawl::whereKey($scan->id)->update([
+            'status' => 'done',
+            'finished_at' => now(),
+        ]);
+    }
 }
 
-function collectUniqueUrls(baseUrl, hrefs) {
-  const seen = new Map();
-  const origin = new URL(baseUrl).origin;
 
-  const add = (original) => {
-    const normalized = normalizeUrl(original, baseUrl);
-    if (normalized && normalized.startsWith(origin) && !seen.has(normalized)) {
-      seen.set(normalized, normalizeUrl(original, baseUrl)); // könnte auch original sein
-    }
-  };
-
-  add(baseUrl);
-
-  for (const href of hrefs) {
-    add(href);
-  }
-
-  return Array.from(seen.values()); // gibt eindeutige Normalformen zurück
-}
-
-module.exports = {
-  normalizeUrl,
-  collectUniqueUrls,
-};
+=== MODULE: MODEL LAYER ===
 
 
-=== MODULE: DATABASE ===
-
-
------ database/.gitignore -----
-
-*.sqlite*
-
-
-
------ database/factories/UserFactory.php -----
+----- app/Models/Analysis.php -----
 
 <?php
 
-namespace Database\Factories;
+namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
-/**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\User>
- */
-class UserFactory extends Factory
+class Analysis extends Model
 {
-    /**
-     * The current password being used by the factory.
-     */
-    protected static ?string $password;
+    use HasFactory;
+
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'project_id',
+        'keyword',
+        'city',
+        'url',
+    ];
+
+    public function project()
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+    public function reports()
+    {
+        return $this->hasMany(Report::class);
+    }
+}
+
+
+
+----- app/Models/Crawl.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Crawl extends Model
+{
+    use HasFactory;
+
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'root_url',
+        'start_url',
+        'domain',
+        'status',
+        'pages_discovered',
+        'pages_scanned',
+        'pages_failed',
+        'pages_total',
+        'started_at',
+        'finished_at',
+        'created_at',
+        'updated_at',
+    ];
+
+    protected $casts = [
+        'started_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'finished_at' => 'datetime',
+    ];
+
+    public function pages()
+    {
+        return $this->hasMany(CrawlPage::class);
+    }
+
+    public function links()
+    {
+        return $this->hasMany(CrawlLink::class);
+    }
+
+    public function getEntryUrlAttribute(): string
+    {
+        return $this->root_url ?: $this->start_url;
+    }
+}
+
+
+
+----- app/Models/CrawlEvent.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class CrawlEvent extends Model
+{
+    use HasFactory;
+
+    public $timestamps = false;
+
+    protected $fillable = [
+        'crawl_id',
+        'type',
+        'payload',
+        'created_at',
+    ];
+
+    protected $casts = [
+        'payload' => 'array',
+        'created_at' => 'datetime',
+    ];
+}
+
+
+
+----- app/Models/CrawlJob.php -----
+
+<?php
+
+namespace App\Models;
+
+class CrawlJob extends Crawl
+{
+    protected $table = 'crawls';
+}
+
+
+
+----- app/Models/CrawlLink.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class CrawlLink extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'crawl_id',
+        'source_url',
+        'target_url',
+        'type',
+        'status_code',
+        'redirect_chain_length',
+        'created_at',
+        'updated_at',
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    public function crawl()
+    {
+        return $this->belongsTo(Crawl::class);
+    }
+}
+
+
+
+----- app/Models/CrawlPage.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class CrawlPage extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'crawl_id',
+        'url',
+        'status_code',
+        'depth',
+        'title',
+        'meta_description',
+        'h1_count',
+        'alt_missing_count',
+        'internal_links_count',
+        'external_links_count',
+        'word_count',
+        'content_hash',
+        'text_hash',
+        'response_time',
+        'internal_links_in',
+        'created_at',
+        'updated_at',
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    public function crawl()
+    {
+        return $this->belongsTo(Crawl::class);
+    }
+}
+
+
+
+----- app/Models/CrawlQueue.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class CrawlQueue extends Model
+{
+    use HasFactory;
+
+    public $timestamps = false;
+
+    protected $table = 'crawl_queue';
+
+    protected $fillable = [
+        'crawl_id',
+        'url',
+        'depth',
+        'status',
+        'created_at',
+    ];
+}
+
+
+
+----- app/Models/Issue.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Issue extends Model
+{
+    public const SEVERITY_CRITICAL = 'critical';
+    public const SEVERITY_WARNING = 'warning';
+    public const SEVERITY_INFO = 'info';
+
+    public $timestamps = false;
+
+    protected $fillable = [
+        'report_id',
+        'url',
+        'type',
+        'severity',
+        'message',
+        'created_at',
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+    ];
+
+    public function report()
+    {
+        return $this->belongsTo(Report::class);
+    }
+}
+
+
+
+----- app/Models/Project.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class Project extends Model
+{
+    use HasFactory;
+
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'user_id',
+        'name',
+        'domain',
+    ];
+
+    public function analyses()
+    {
+        return $this->hasMany(Analysis::class);
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+}
+
+
+
+----- app/Models/Report.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class Report extends Model
+{
+    use HasFactory;
+
+    public $incrementing = false;
+    protected $keyType = 'string';
+
+    protected $fillable = [
+        'id',
+        'user_id',
+        'analysis_id',
+        'type',
+        'url',
+        'keyword',
+        'city',
+        'status',
+        'total_urls',
+        'processed_urls',
+        'score',
+        'started_at',
+        'finished_at'
+    ];
+
+    protected $casts = [
+        'started_at' => 'datetime',
+        'finished_at' => 'datetime',
+    ];
+
+    public function results()
+    {
+        return $this->hasMany(\App\Models\ReportResult::class, 'report_id');
+    }
+
+    public function issues()
+    {
+        return $this->hasMany(Issue::class, 'report_id');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function analysis()
+    {
+        return $this->belongsTo(Analysis::class);
+    }
+}
+
+
+
+----- app/Models/ReportResult.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class ReportResult extends Model
+{
+  protected $fillable = [
+    'report_id',
+    'module',
+    'url',
+    'position',
+    'score',
+    'payload',
+  ];
+
+  protected $casts = [
+    'payload' => 'array',
+  ];
+
+  public function report()
+  {
+    return $this->belongsTo(Report::class);
+  }
+}
+
+
+
+----- app/Models/Scan.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+
+class Scan extends Model
+{
+    use HasFactory;
+    public $incrementing = false;
+    protected $keyType = 'string';
+    protected $fillable = ['id', 'url', 'status', 'total', 'current', 'started_at', 'finished_at'];
+
+    public function results()
+    {
+        return $this->hasMany(ScanResult::class);
+    }
+}
+
+
+
+----- app/Models/ScanResult.php -----
+
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+
+class ScanResult extends Model
+{
+    use HasFactory;
+    protected $fillable = ['scan_id', 'position', 'url', 'result', 'payload'];
+
+    public function scan()
+    {
+        return $this->belongsTo(Scan::class);
+    }
+
+    protected $casts = [
+        'result' => 'array',
+        'payload' => 'array',
+    ];
+}
+
+
+
+----- app/Models/User.php -----
+
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+class User extends Authenticatable
+{
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasFactory, Notifiable;
 
     /**
-     * Define the model's default state.
+     * The attributes that are mass assignable.
      *
-     * @return array<string, mixed>
+     * @var list<string>
      */
-    public function definition(): array
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+    ];
+
+    /**
+     * The attributes that should be hidden for serialization.
+     *
+     * @var list<string>
+     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
     {
         return [
-            'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
-            'password' => static::$password ??= Hash::make('password'),
-            'remember_token' => Str::random(10),
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
         ];
-    }
-
-    /**
-     * Indicate that the model's email address should be unverified.
-     */
-    public function unverified(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
-        ]);
     }
 }
 
 
+=== MODULE: PROVIDER LAYER ===
 
------ database/seeders/DatabaseSeeder.php -----
+
+----- app/Providers/AppServiceProvider.php -----
 
 <?php
 
-namespace Database\Seeders;
+namespace App\Providers;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
+use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ServiceProvider;
 
-class DatabaseSeeder extends Seeder
+class AppServiceProvider extends ServiceProvider
 {
     /**
-     * Seed the application's database.
+     * Register any application services.
      */
-    public function run(): void
+    public function register(): void
     {
-        // User::factory(10)->create();
+        //
+    }
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
+    {
+        Paginator::useTailwind();
+
+        if (! Schema::hasTable('system_settings')) {
+            return;
+        }
+
+        $settingKeys = [
+            'max_pages',
+            'max_depth',
+            'page_timeout',
+            'max_parallel_pages',
+            'max_retries',
+            'retry_delay',
+            'max_scan_time',
+            'crawler_use_redis',
+        ];
+
+        $settings = DB::table('system_settings')
+            ->whereIn('key', $settingKeys)
+            ->pluck('value', 'key');
+
+        foreach ($settingKeys as $key) {
+            $value = $settings[$key] ?? null;
+
+            if ($key === 'crawler_use_redis') {
+                config(["seo.{$key}" => (int) ($value ?? 0) === 1]);
+                continue;
+            }
+
+            if ($value !== null && is_numeric($value)) {
+                config(["seo.{$key}" => (int) $value]);
+            }
+        }
+    }
+}
+
+
+=== MODULE: SERVICE LAYER ===
+
+
+----- app/Services/Crawler/CrawlLinkPersister.php -----
+
+<?php
+
+namespace App\Services\Crawler;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+
+class CrawlLinkPersister
+{
+    public function persist(string $crawlId, array $payload): void
+    {
+        $sourceUrl = $payload['source_url'] ?? $payload['source'] ?? null;
+        $targetUrl = $payload['target_url'] ?? $payload['target'] ?? null;
+
+        if (!$sourceUrl || !$targetUrl) {
+            throw new InvalidArgumentException('CrawlLinkPersister requires source_url and target_url in payload.');
+        }
+
+        $type = $payload['type'] ?? $payload['link_type'] ?? 'internal';
+
+        Log::info('persisting crawl link', [
+            'crawl_id' => $crawlId,
+            'source_url' => $sourceUrl,
+            'target_url' => $targetUrl,
+            'type' => $type,
+        ]);
+
+        DB::table('crawl_links')->updateOrInsert(
+            [
+                'crawl_id' => $crawlId,
+                'source_url' => $sourceUrl,
+                'target_url' => $targetUrl,
+            ],
+            [
+                'type' => $type,
+                'link_type' => $type,
+                'status_code' => $payload['status_code'] ?? null,
+                'redirect_chain_length' => (int) ($payload['redirect_chain_length'] ?? 0),
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+        );
+    }
+}
+
+
+
+----- app/Services/Crawler/CrawlMetricsService.php -----
+
+<?php
+
+namespace App\Services\Crawler;
+
+class CrawlMetricsService
+{
+    public function normalizePagePayload(array $payload): array
+    {
+        $content = (string) ($payload['content'] ?? '');
+        $text = (string) ($payload['text_content'] ?? '');
+
+        $payload['content_hash'] = $payload['content_hash'] ?? sha1($content);
+        $payload['text_hash'] = $payload['text_hash'] ?? sha1($text);
+        $payload['word_count'] = $payload['word_count'] ?? str_word_count($text);
+
+        return $payload;
+    }
+}
+
+
+
+----- app/Services/Crawler/CrawlPagePersister.php -----
+
+<?php
+
+namespace App\Services\Crawler;
+
+use Illuminate\Support\Facades\DB;
+
+class CrawlPagePersister
+{
+    public function persist(string $crawlId, array $payload): void
+    {
+        DB::table('crawl_pages')->upsert([
+            [
+                'crawl_id' => $crawlId,
+                'url' => $payload['url'],
+                'status_code' => $payload['status_code'] ?? null,
+                'depth' => (int) ($payload['depth'] ?? 0),
+                'title' => $payload['title'] ?? null,
+                'meta_description' => $payload['meta_description'] ?? null,
+                'h1_count' => (int) ($payload['h1_count'] ?? 0),
+                'alt_missing_count' => (int) ($payload['alt_missing_count'] ?? 0),
+                'internal_links_count' => (int) ($payload['internal_links_count'] ?? 0),
+                'external_links_count' => (int) ($payload['external_links_count'] ?? 0),
+                'word_count' => (int) ($payload['word_count'] ?? 0),
+                'content_hash' => $payload['content_hash'] ?? null,
+                'text_hash' => $payload['text_hash'] ?? null,
+                'response_time' => $payload['response_time'] ?? null,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+        ], ['crawl_id', 'url'], [
+            'status_code',
+            'depth',
+            'title',
+            'meta_description',
+            'h1_count',
+            'alt_missing_count',
+            'internal_links_count',
+            'external_links_count',
+            'word_count',
+            'content_hash',
+            'text_hash',
+            'response_time',
+            'updated_at',
         ]);
     }
 }
 
 
-=== MODULE: TAILWIND CONFIG ===
 
+----- app/Services/Crawler/CrawlProgressService.php -----
 
------ tailwind.config.js -----
+<?php
 
-module.exports = {
-  content: [
-    './resources/views/**/*.blade.php',
-    './resources/js/**/*.js',
-    './resources/css/**/*.css',
-  ],
-  safelist: [
-    'absolute',
-    'animate-spin',
-    'antialiased',
-    'aspect-[335/376]',
-    'bg-blue-600',
-    'bg-gray-100',
-    'bg-gray-400',
-    'bg-gray-50',
-    'bg-green-500',
-    'bg-orange-600',
-    'bg-red-500',
-    'bg-red-600',
-    'bg-white',
-    'border',
-    'border-b',
-    'border-black',
-    'border-collapse',
-    'border-gray-200',
-    'border-gray-300',
-    'border-t',
-    'border-transparent',
-    'break-all',
-    'break-words',
-    'check-option',
-    'delay-300',
-    'divide-gray-100',
-    'divide-gray-200',
-    'divide-y',
-    'duration-750',
-    'flex',
-    'flex-1',
-    'flex-col',
-    'flex-col-reverse',
-    'flex-wrap',
-    'font-bold',
-    'font-medium',
-    'font-semibold',
-    'gap-2',
-    'gap-3',
-    'gap-4',
-    'h-10',
-    'h-16',
-    'h-3',
-    'h-5',
-    'hidden',
-    'inline-block',
-    'inline-flex',
-    'inset-0',
-    'items-center',
-    'items-start',
-    'justify-between',
-    'justify-center',
-    'justify-end',
-    'leading-[20px]',
-    'leading-normal',
-    'list-disc',
-    'max-w-5xl',
-    'max-w-7xl',
-    'max-w-[335px]',
-    'max-w-none',
-    'mb-1',
-    'mb-2',
-    'mb-4',
-    'mb-6',
-    'min-h-screen',
-    'min-w-full',
-    'ml-1',
-    'mr-2',
-    'mt-3',
-    'mt-4',
-    'mt-6',
-    'mx-auto',
-    'opacity-100',
-    'opacity-25',
-    'opacity-75',
-    'overflow-hidden',
-    'overflow-x-auto',
-    'p-2',
-    'p-4',
-    'p-6',
-    'pb-12',
-    'pl-5',
-    'px-2',
-    'px-3',
-    'px-4',
-    'px-5',
-    'py-1',
-    'py-10',
-    'py-2',
-    'py-6',
-    'relative',
-    'rounded',
-    'rounded-bl-lg',
-    'rounded-br-lg',
-    'rounded-full',
-    'rounded-sm',
-    'rounded-t-lg',
-    'shadow',
-    'shadow-sm',
-    'shrink-0',
-    'space-x-1',
-    'space-x-3',
-    'space-x-6',
-    'space-y-1',
-    'space-y-4',
-    'stroke-current',
-    'table-auto',
-    'text-2xl',
-    'text-[13px]',
-    'text-base',
-    'text-blue-600',
-    'text-center',
-    'text-gray-500',
-    'text-gray-600',
-    'text-gray-700',
-    'text-gray-800',
-    'text-gray-900',
-    'text-green-600',
-    'text-left',
-    'text-orange-600',
-    'text-red-600',
-    'text-sm',
-    'text-white',
-    'text-xl',
-    'text-xs',
-    'tracking-wider',
-    'transition',
-    'transition-all',
-    'transition-opacity',
-    'translate-y-0',
-    'underline',
-    'underline-offset-4',
-    'uppercase',
-    'w-3',
-    'w-5',
-    'w-[448px]',
-    'w-auto',
-    'w-full'
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
+namespace App\Services\Crawler;
+
+use App\Models\Crawl;
+
+class CrawlProgressService
+{
+    public function incrementDiscovered(string $crawlId): void
+    {
+        Crawl::whereKey($crawlId)->increment('pages_discovered');
+    }
+
+    public function incrementScanned(string $crawlId): void
+    {
+        Crawl::whereKey($crawlId)->increment('pages_scanned');
+    }
+
+    public function incrementFailed(string $crawlId): void
+    {
+        Crawl::whereKey($crawlId)->increment('pages_failed');
+    }
 }
 
 
-=== MODULE: VITE CONFIG ===
+
+----- app/Services/Crawler/CrawlerEventConsumer.php -----
+
+<?php
+
+namespace App\Services\Crawler;
+
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Log;
+
+class CrawlerEventConsumer
+{
+    public function __construct(
+        private readonly CrawlerEventProcessor $crawlerEventProcessor,
+    ) {
+    }
+
+    public function consume(string $crawlId, int $blockSeconds = 1): bool
+    {
+        $event = Redis::blpop('crawl:event_queue', $blockSeconds);
+        if (!$event || !isset($event[1])) {
+            return false;
+        }
+
+        $decoded = json_decode($event[1], true);
+        if (!is_array($decoded)) {
+            return false;
+        }
+
+        Log::info('crawler event received from redis queue', [
+            'expected_crawl_id' => $crawlId,
+            'event_type' => $decoded['type'] ?? 'unknown',
+            'event_crawl_id' => $decoded['crawl_id'] ?? null,
+            'payload' => $decoded['payload'] ?? null,
+        ]);
+
+        return $this->crawlerEventProcessor->process($crawlId, $decoded);
+    }
+}
 
 
------ vite.config.js -----
 
-import { defineConfig } from 'vite'
-import laravel from 'laravel-vite-plugin'
-import fs from 'fs'
+----- app/Services/Crawler/CrawlerEventProcessor.php -----
 
-export default defineConfig({
-    plugins: [
-        laravel({
-            input: ['resources/css/app.css', 'resources/js/app.js'],
-            refresh: true,
-        }),
-    ],
-})
+<?php
+
+namespace App\Services\Crawler;
+
+use App\Models\Crawl;
+use App\Support\CrawlerRuntime;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Redis;
+
+class CrawlerEventProcessor
+{
+    public function __construct(
+        private readonly CrawlPagePersister $crawlPagePersister,
+        private readonly CrawlLinkPersister $crawlLinkPersister,
+        private readonly CrawlMetricsService $crawlMetricsService,
+        private readonly CrawlProgressService $crawlProgressService,
+    ) {
+    }
+
+    public function process(string $crawlId, array $decoded): bool
+    {
+        if (($decoded['crawl_id'] ?? null) !== $crawlId) {
+            return false;
+        }
+
+        $type = $decoded['type'] ?? 'unknown';
+        $payload = is_array($decoded['payload'] ?? null) ? $decoded['payload'] : [];
+
+        DB::table('crawl_events')->insert([
+            'crawl_id' => $crawlId,
+            'type' => $type,
+            'payload' => json_encode($payload, JSON_UNESCAPED_SLASHES),
+            'created_at' => now(),
+        ]);
+
+        if ($type === 'url_discovered') {
+            $this->handleUrlDiscovered($crawlId, $payload);
+        }
+
+        if ($type === 'page_crawled') {
+            $normalizedPayload = $this->crawlMetricsService->normalizePagePayload($payload);
+            $this->crawlPagePersister->persist($crawlId, $normalizedPayload);
+
+            if (($normalizedPayload['status_code'] ?? 500) >= 400) {
+                $this->crawlProgressService->incrementFailed($crawlId);
+            } else {
+                $this->crawlProgressService->incrementScanned($crawlId);
+            }
+        }
+
+        if ($type === 'link_discovered') {
+            Log::info('routing crawler link_discovered event to CrawlLinkPersister', [
+                'crawl_id' => $crawlId,
+                'payload' => $payload,
+            ]);
+            $this->crawlLinkPersister->persist($crawlId, $payload);
+        }
+
+        if ($type === 'crawl_progress' && !empty($payload['url']) && !empty($payload['status'])) {
+            DB::table('crawl_queue')
+                ->where('crawl_id', $crawlId)
+                ->where('url', $payload['url'])
+                ->update(['status' => $payload['status']]);
+        }
+
+        if ($type === 'crawl_started') {
+            Crawl::whereKey($crawlId)->update([
+                'status' => 'running',
+                'started_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        if ($type === 'crawl_finished') {
+            Crawl::whereKey($crawlId)->update([
+                'status' => 'done',
+                'finished_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        return true;
+    }
+
+    private function handleUrlDiscovered(string $crawlId, array $payload): void
+    {
+        $url = $payload['url'] ?? null;
+        if (!$url) {
+            return;
+        }
+
+        $exists = DB::table('crawl_pages')->where('crawl_id', $crawlId)->where('url', $url)->exists();
+        if ($exists) {
+            return;
+        }
+
+        $known = DB::table('crawl_queue')->where('crawl_id', $crawlId)->where('url', $url)->exists();
+
+        DB::table('crawl_queue')->updateOrInsert(
+            ['crawl_id' => $crawlId, 'url' => $url],
+            ['depth' => (int) ($payload['depth'] ?? 0), 'status' => 'pending', 'created_at' => now()],
+        );
+
+        if (!$known) {
+            $this->crawlProgressService->incrementDiscovered($crawlId);
+        }
+
+        if (CrawlerRuntime::useRedis()) {
+            Redis::lpush('crawl:url_queue', json_encode([
+                'crawl_id' => $crawlId,
+                'url' => $url,
+                'depth' => (int) ($payload['depth'] ?? 0),
+            ], JSON_UNESCAPED_SLASHES));
+        }
+    }
+}
 
 
-=== DEPENDENCY MAP ===
 
-ScanController
-→ RunScan Job
-→ storage/scans/{scanId}
+----- app/Services/IssueDetectionService.php -----
 
-RunScan
-→ node-scanner/multiScanner.js
+<?php
 
-multiScanner.js
-→ checks/*
-→ utils/*
+namespace App\Services;
 
-Blade Views
-→ Vite
-→ Tailwind
+use App\Models\Issue;
+use App\Models\Report;
+
+class IssueDetectionService
+{
+    private const TYPE_SEVERITY_MAP = [
+        'missing_h1' => Issue::SEVERITY_CRITICAL,
+        'duplicate_title' => Issue::SEVERITY_WARNING,
+        'thin_content' => Issue::SEVERITY_WARNING,
+        'missing_schema' => Issue::SEVERITY_WARNING,
+        'missing_alt' => Issue::SEVERITY_INFO,
+    ];
+
+    public function detectAndStoreForReport(Report $report): void
+    {
+        $issues = $this->detectFromReportResults($report->results->pluck('payload')->all());
+
+        $report->issues()->delete();
+
+        if (empty($issues)) {
+            return;
+        }
+
+        $report->issues()->createMany(array_map(function (array $issue) use ($report) {
+            return [
+                'report_id' => $report->id,
+                'url' => $issue['url'] ?? $report->url,
+                'type' => $issue['type'],
+                'severity' => $issue['severity'],
+                'message' => $issue['message'],
+                'created_at' => now(),
+            ];
+        }, $issues));
+    }
+
+    public function detectFromReportResults(array $reportResultsPayload): array
+    {
+        $issues = [];
+        $pages = [];
+
+        foreach ($reportResultsPayload as $payload) {
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $pages = array_merge($pages, $this->extractPagesFromPayload($payload));
+        }
+
+        if (empty($pages)) {
+            return [];
+        }
+
+        $titleUsage = [];
+        foreach ($pages as $page) {
+            $normalizedTitle = trim((string) ($page['title'] ?? ''));
+            if ($normalizedTitle === '') {
+                continue;
+            }
+
+            $titleUsage[mb_strtolower($normalizedTitle)][] = $page['url'];
+        }
+
+        foreach ($pages as $page) {
+            $url = $page['url'] ?? null;
+            $h1 = is_array($page['h1']) ? $page['h1'] : [];
+            $title = trim((string) ($page['title'] ?? ''));
+            $content = trim((string) ($page['content'] ?? ''));
+            $schema = is_array($page['schema']) ? $page['schema'] : [];
+            $altCheck = is_array($page['alt_check']) ? $page['alt_check'] : [];
+
+            if (count($h1) === 0) {
+                $issues[] = $this->buildIssue($url, 'missing_h1', 'Missing H1 heading.');
+            }
+
+            if ($title !== '' && count($titleUsage[mb_strtolower($title)] ?? []) > 1) {
+                $issues[] = $this->buildIssue($url, 'duplicate_title', 'Duplicate page title detected.');
+            }
+
+            if (mb_strlen($content) > 0 && mb_strlen($content) < 300) {
+                $issues[] = $this->buildIssue($url, 'thin_content', 'Thin content detected.');
+            }
+
+            if (empty($schema)) {
+                $issues[] = $this->buildIssue($url, 'missing_schema', 'No schema markup detected.');
+            }
+
+            $altMissing = (int) ($altCheck['altMissing'] ?? 0);
+            $altEmpty = (int) ($altCheck['altEmpty'] ?? 0);
+            if ($altMissing > 0 || $altEmpty > 0) {
+                $issues[] = $this->buildIssue($url, 'missing_alt', 'Images with missing or empty alt text detected.');
+            }
+        }
+
+        return $issues;
+    }
+
+    private function extractPagesFromPayload(array $payload): array
+    {
+        if (array_key_exists('title', $payload) || array_key_exists('h1', $payload) || array_key_exists('content', $payload)) {
+            return [[
+                'url' => $payload['url'] ?? null,
+                'title' => $payload['title'] ?? '',
+                'h1' => $payload['h1'] ?? [],
+                'content' => $payload['content'] ?? '',
+                'schema' => $payload['schema'] ?? [],
+                'alt_check' => $payload['altCheck'] ?? [],
+            ]];
+        }
+
+        if (isset($payload['breakdown']) && is_array($payload['breakdown'])) {
+            return [[
+                'url' => $payload['url'] ?? null,
+                'title' => data_get($payload, 'title', ''),
+                'h1' => data_get($payload, 'breakdown.h1.checks.exists') ? ['present'] : [],
+                'content' => str_repeat('x', (int) data_get($payload, 'breakdown.content.score', 0) * 30),
+                'schema' => data_get($payload, 'breakdown.schema.score', 0) > 0 ? ['present'] : [],
+                'alt_check' => [],
+            ]];
+        }
+
+        return [];
+    }
+
+    private function buildIssue(?string $url, string $type, string $message): array
+    {
+        return [
+            'url' => $url,
+            'type' => $type,
+            'severity' => self::TYPE_SEVERITY_MAP[$type] ?? Issue::SEVERITY_INFO,
+            'message' => $message,
+        ];
+    }
+}
+
+
+
+----- app/Services/ReportPersistenceService.php -----
+
+<?php
+
+namespace App\Services;
+
+use App\Models\Report;
+use Illuminate\Support\Facades\Storage;
+
+class ReportPersistenceService
+{
+  public function syncFromStorage(Report $report): void
+  {
+    $directory = "scans/{$report->id}";
+
+    if (!Storage::exists($directory)) {
+      return;
+    }
+
+    $files = collect(Storage::files($directory))
+      ->filter(fn(string $path) => str_ends_with($path, '.json'))
+      ->reject(fn(string $path) => str_ends_with($path, 'progress.json'))
+      ->sort()
+      ->values();
+
+    if ($files->isEmpty()) {
+      return;
+    }
+
+    $module = $report->type === 'crawler' ? 'crawler' : 'local_seo';
+    $scores = [];
+
+    foreach ($files as $position => $path) {
+      $content = json_decode(Storage::get($path), true);
+
+      if (!is_array($content)) {
+        continue;
+      }
+
+      $score = null;
+      if (isset($content['score']) && is_numeric($content['score'])) {
+        $score = (float) $content['score'];
+        $scores[] = $score;
+      }
+
+      $report->results()->updateOrCreate(
+        [
+          'report_id' => $report->id,
+          'position' => (int) $position,
+        ],
+        [
+          'module' => $module,
+          'url' => $content['url'] ?? $report->url,
+          'score' => $score,
+          'payload' => $content,
+        ]
+      );
+    }
+
+    $progressPath = "{$directory}/progress.json";
+    $progress = Storage::exists($progressPath)
+      ? json_decode(Storage::get($progressPath), true)
+      : [];
+
+    $finalScore = !empty($scores)
+      ? round(array_sum($scores) / count($scores), 2)
+      : ($report->score ?? 0);
+
+    $report->update([
+      'score' => $finalScore,
+      'status' => 'done',
+      'total_urls' => $progress['total'] ?? $report->total_urls,
+      'processed_urls' => $progress['current'] ?? $report->processed_urls,
+      'finished_at' => now(),
+    ]);
+  }
+}
+
+
+
+----- app/Services/Scoring/PriorityFactory.php -----
+
+<?php
+
+namespace App\Services\Scoring;
+
+class PriorityFactory
+{
+  public static function make(
+    string $code,
+    string $severity,
+    string $category,
+    string $message
+  ): array {
+    return [
+      'code' => $code,
+      'severity' => $severity,
+      'category' => $category,
+      'message' => $message
+    ];
+  }
+}
+
+
+
+----- app/Services/SystemHealthService.php -----
+
+<?php
+
+namespace App\Services;
+
+use App\Support\CrawlerRuntime;
+use Illuminate\Support\Facades\Log;
+
+class SystemHealthService
+{
+    /** @return array<int, string> */
+    public function collectWarnings(): array
+    {
+        $warnings = [];
+
+        if (CrawlerRuntime::redisEnabledSetting() && !CrawlerRuntime::redisReachable()) {
+            $warnings[] = 'Redis queue enabled but Redis server not reachable.';
+        }
+
+        $queueConnection = (string) config('queue.default');
+        if (CrawlerRuntime::redisEnabledSetting() && $queueConnection !== 'redis') {
+            $warnings[] = 'Redis queue is enabled but queue driver is not set to redis.';
+        }
+
+        $logPath = storage_path('logs');
+        if (!is_dir($logPath) || !is_writable($logPath)) {
+            $warnings[] = 'Storage logs directory is not writable.';
+        }
+
+        if (!$this->nodeAvailable()) {
+            $warnings[] = 'Node crawler runtime is not available (optional check).';
+        }
+
+        foreach ($warnings as $warning) {
+            Log::warning($warning);
+        }
+
+        return $warnings;
+    }
+
+    private function nodeAvailable(): bool
+    {
+        $nodeBinary = trim((string) shell_exec('command -v node 2>/dev/null'));
+
+        return $nodeBinary !== '';
+    }
+}
+
+
+=== MODULE: ROUTES ===
+
+
+----- routes/console.php -----
+
+<?php
+
+use App\Services\Crawler\CrawlerEventConsumer;
+use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Artisan;
+
+Artisan::command('inspire', function () {
+    $this->comment(Inspiring::quote());
+})->purpose('Display an inspiring quote');
+
+Artisan::command('scan:workers', function () {
+    $workers = (int) env('SCAN_WORKERS', 4);
+    $concurrency = (int) env('SCAN_CONCURRENCY', 5);
+
+    if ($workers < 1) {
+        $workers = 1;
+    }
+
+    if ($concurrency < 1) {
+        $concurrency = 1;
+    }
+
+    $this->info("Starting {$workers} scan workers with concurrency {$concurrency}.");
+
+    for ($index = 1; $index <= $workers; $index++) {
+        $command = sprintf(
+            'php artisan queue:work --queue=default --sleep=1 --tries=3 --name=scan-worker-%d',
+            $index
+        );
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            pclose(popen('start /B '.$command, 'r'));
+        } else {
+            $process = proc_open($command.' > /dev/null 2>&1 &', [], $pipes);
+            if (is_resource($process)) {
+                proc_close($process);
+            }
+        }
+    }
+
+    $this->info('Scan workers launched.');
+})->purpose('Launch multiple scan queue workers');
+
+Artisan::command('crawl:consume-events {crawlId}', function (string $crawlId, CrawlerEventConsumer $consumer) {
+    while (true) {
+        $consumer->consume($crawlId, 2);
+    }
+})->purpose('Consume crawl events from Redis and persist crawl data.');
+
+
+
+----- routes/web.php -----
+
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CrawlerController;
+use App\Http\Controllers\LocalSeoController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\CrawlController;
+use App\Http\Controllers\LogController;
+use App\Http\Controllers\QueueController;
+use App\Http\Controllers\ScanController;
+use App\Http\Controllers\AdminSettingsController;
+use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\AnalysisController;
+use App\Http\Controllers\CrawlerRuntimeController;
+use App\Services\Crawler\CrawlLinkPersister;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Support\Facades\DB;
+
+Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+/*
+|--------------------------------------------------------------------------
+| CRAWLER REPORT
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/crawler', [CrawlerController::class, 'form'])->name('crawler.form');
+Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.start');
+
+/*
+|--------------------------------------------------------------------------
+| LOCAL SEO REPORT
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
+Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
+
+/*
+|--------------------------------------------------------------------------
+| MULTI SCAN / LIVE SCANNER
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
+Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
+
+Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
+Route::get('/scans/{scan}/progress', [ScanController::class, 'progress'])->name('scans.progress');
+Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
+
+Route::post('/multiscan/abort', [ScanController::class, 'abort']);
+
+Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
+Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
+Route::get('/crawls', [CrawlController::class, 'index'])->name('crawls.index');
+Route::get('/crawls/{crawl}', [CrawlController::class, 'show'])->name('crawls.show');
+Route::post('/crawls/{crawl}/rerun', [CrawlController::class, 'rerun'])->name('crawls.rerun');
+
+
+/*
+|--------------------------------------------------------------------------
+| PROJECTS & ANALYSES
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
+Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+
+Route::get('/analyses/{analysis}', [AnalysisController::class, 'show'])->name('analyses.show');
+
+/*
+|--------------------------------------------------------------------------
+| REPORT OVERVIEW
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+Route::get('/reports/archive', [ReportController::class, 'archive'])->name('reports.archive');
+Route::get('/reports/compare', [ReportController::class, 'compare'])->name('reports.compare');
+Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
+
+Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
+  return response()->json([
+    'status' => $report->status,
+    'score' => $report->score,
+    'started_at' => $report->started_at,
+    'finished_at' => $report->finished_at,
+  ]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| LOGS & DEBUG
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
+Route::post('/logs/clear', [LogController::class, 'clear'])->name('logs.clear');
+Route::view('/logs/live', 'logs.live')->name('logs.live');
+
+Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
+Route::get('/system/workers', [QueueController::class, 'workers'])->name('system.workers');
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN SETTINGS
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/admin/settings', [AdminSettingsController::class, 'index'])->name('admin.settings.index');
+Route::post('/admin/settings', [AdminSettingsController::class, 'update'])->name('admin.settings.update');
+
+Route::post('/internal/crawler/event', [CrawlerRuntimeController::class, 'event'])
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('crawler.runtime.event');
+Route::post('/internal/crawler/next-task', [CrawlerRuntimeController::class, 'nextTask'])
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('crawler.runtime.next-task');
+
+Route::get('/debug/link-test', function (CrawlLinkPersister $persister) {
+    $crawlId = request('crawl_id');
+
+    if (!$crawlId) {
+        return response()->json([
+            'ok' => false,
+            'error' => 'Pass crawl_id query parameter pointing to an existing crawl id.',
+        ], 422);
+    }
+
+    $payload = [
+        'source_url' => 'https://example.com',
+        'target_url' => 'https://example.com/page',
+        'type' => 'internal',
+        'status_code' => 200,
+    ];
+
+    $persister->persist($crawlId, $payload);
+
+    $stored = DB::table('crawl_links')
+        ->where('crawl_id', $crawlId)
+        ->where('source_url', $payload['source_url'])
+        ->where('target_url', $payload['target_url'])
+        ->first();
+
+    return response()->json([
+        'ok' => (bool) $stored,
+        'crawl_id' => $crawlId,
+        'stored' => $stored,
+    ]);
+})->name('debug.link-test');
+
+
+=== MODULE: VIEWS (BLADE) ===
+
+
+----- resources/views/admin/settings.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-semibold mb-2">Crawler Settings</h1>
+  <p class="text-sm text-gray-600 mb-6">Configure runtime limits for crawler scans.</p>
+
+  @if (session('status'))
+  <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+    {{ session('status') }}
+  </div>
+  @endif
+
+  <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white border border-gray-200 rounded-xl p-6 shadow-sm space-y-5">
+    @csrf
+
+    @foreach ($settingKeys as $key)
+    @if ($key === 'crawler_use_redis')
+    <div class="rounded-lg border border-gray-200 p-4">
+      <label for="crawler_use_redis" class="inline-flex items-center gap-3 text-sm font-medium text-gray-700">
+        <input
+          type="checkbox"
+          id="crawler_use_redis"
+          name="crawler_use_redis"
+          value="1"
+          @checked(old('crawler_use_redis', $settings['crawler_use_redis'] ?? false))
+          class="rounded border-gray-300 text-orange-500 focus:ring-orange-400"
+        >
+        <span>Enable Redis Queue</span>
+      </label>
+      <p class="mt-2 text-xs text-gray-500">If enabled, the crawler uses Redis queues and Redis-backed event transport.</p>
+      @error($key)
+      <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+      @enderror
+    </div>
+    @continue
+    @endif
+
+    <div>
+      <label for="{{ $key }}" class="block text-sm font-medium text-gray-700 mb-1">
+        {{ str_replace('_', ' ', ucfirst($key)) }}
+      </label>
+
+      <input
+        type="number"
+        min="1"
+        id="{{ $key }}"
+        name="{{ $key }}"
+        value="{{ old($key, $settings[$key]) }}"
+        class="w-full rounded-lg border-gray-300 focus:border-orange-400 focus:ring-orange-400"
+      >
+
+      @error($key)
+      <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+      @enderror
+    </div>
+    @endforeach
+
+    <div class="pt-2">
+      <button
+        type="submit"
+        class="inline-flex items-center rounded-lg bg-orange-500 px-4 py-2 text-white font-medium hover:bg-orange-600 transition"
+      >
+        Save Settings
+      </button>
+    </div>
+  </form>
+</div>
+@endsection
+
+
+
+----- resources/views/analyses/show.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="max-w-6xl mx-auto space-y-8">
+  <nav class="text-sm text-gray-500">
+    <a href="{{ route('projects.index') }}" class="hover:text-gray-700">Projects</a>
+    <span class="mx-2">/</span>
+    <a href="{{ route('projects.show', $analysis->project) }}" class="hover:text-gray-700">{{ $analysis->project->name }}</a>
+    <span class="mx-2">/</span>
+    <span class="text-gray-700">{{ $analysis->keyword ?: '—' }} {{ $analysis->city ?: '—' }}</span>
+  </nav>
+
+  <header>
+    <h1 class="text-2xl font-semibold">{{ $analysis->keyword ?: '—' }} • {{ $analysis->city ?: '—' }}</h1>
+    <p class="text-gray-700 mt-1">{{ $analysis->project->domain }}</p>
+    <p class="text-sm text-gray-500 mt-1">Project: {{ $analysis->project->name }}</p>
+  </header>
+
+  <section class="space-y-4">
+    <h2 class="text-lg font-semibold">Scan History</h2>
+
+    <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      <table class="min-w-full divide-y divide-gray-200 text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left font-semibold text-gray-700">Date</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-700">Score</th>
+            <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          @forelse($analysis->reports as $report)
+            <tr class="hover:bg-gray-50 transition">
+              <td class="px-4 py-3">
+                <a href="{{ route('reports.show', $report) }}" class="text-blue-600 hover:underline">
+                  {{ $report->started_at?->format('d.m.Y H:i') ?? '—' }}
+                </a>
+              </td>
+              <td class="px-4 py-3 text-gray-800">{{ is_numeric($report->score) ? number_format((float) $report->score, 0) : '—' }}</td>
+              <td class="px-4 py-3 text-gray-700">{{ $report->status ?? '—' }}</td>
+            </tr>
+          @empty
+            <tr>
+              <td colspan="3" class="px-4 py-6 text-center text-gray-500">Keine Reports vorhanden.</td>
+            </tr>
+          @endforelse
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+@endsection
+
+
+
+----- resources/views/crawler/form.blade.php -----
+
+/crawler/form.blade.php
+
+
+
+----- resources/views/crawls/index.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-semibold">Crawls</h1>
+  </div>
+
+  <div class="rounded-lg bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-600">
+        <tr>
+          <th class="px-4 py-3 font-medium">Domain</th>
+          <th class="px-4 py-3 font-medium">Pages scanned</th>
+          <th class="px-4 py-3 font-medium">Status</th>
+          <th class="px-4 py-3 font-medium">Created</th>
+          <th class="px-4 py-3 font-medium text-right">Action</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        @forelse($crawls as $crawl)
+          <tr>
+            <td class="px-4 py-3 text-gray-900">{{ $crawl->domain }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $crawl->pages_scanned }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $crawl->status }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ optional($crawl->created_at)->format('d.m.Y H:i') ?? '—' }}</td>
+            <td class="px-4 py-3 text-right">
+              <a href="{{ route('crawls.show', $crawl) }}" class="text-blue-600 hover:underline">View</a>
+            </td>
+          </tr>
+        @empty
+          <tr>
+            <td colspan="5" class="px-4 py-6 text-center text-gray-500">No crawls available.</td>
+          </tr>
+        @endforelse
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    {{ $crawls->links() }}
+  </div>
+</div>
+@endsection
+
+
+
+----- resources/views/crawls/show.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold">Crawl details</h1>
+      <p class="text-sm text-gray-600">{{ $crawl->entry_url }}</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <form method="POST" action="{{ route('crawls.rerun', $crawl) }}">
+        @csrf
+        <button type="submit" class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          Run Crawl Again
+        </button>
+      </form>
+      <a href="{{ route('crawls.index') }}" class="text-sm text-blue-600 hover:underline">← Back to Crawls</a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+    <div class="rounded border p-3 bg-white"><strong>Domain:</strong> {{ $crawl->domain }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Status:</strong> {{ $crawl->status }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Pages scanned:</strong> {{ $crawl->pages_scanned }}</div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+    <div class="rounded border p-3 bg-white"><strong>Pages crawled:</strong> {{ $summary['pages_crawled'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Internal links:</strong> {{ $summary['internal_links'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>External links:</strong> {{ $summary['external_links'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Broken links:</strong> {{ $summary['broken_links'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Redirects:</strong> {{ $summary['redirects'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Duplicate pages:</strong> {{ $summary['duplicate_pages'] }}</div>
+    <div class="rounded border p-3 bg-white"><strong>Broken pages:</strong> {{ $summary['broken_pages'] }}</div>
+  </div>
+
+  <div class="rounded border bg-white p-4">
+    <h2 class="text-lg font-semibold mb-3">Crawl issue reports</h2>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+      <div class="rounded border p-2"><strong>Missing ALT text:</strong> {{ $issueReports['missing_alt'] }}</div>
+      <div class="rounded border p-2"><strong>Missing H1:</strong> {{ $issueReports['missing_h1'] }}</div>
+      <div class="rounded border p-2"><strong>Broken links:</strong> {{ $issueReports['broken_links'] }}</div>
+      <div class="rounded border p-2"><strong>Redirect chains:</strong> {{ $issueReports['redirect_chains'] }}</div>
+      <div class="rounded border p-2"><strong>Duplicate pages:</strong> {{ $issueReports['duplicate_pages'] }}</div>
+      <div class="rounded border p-2"><strong>Orphan pages:</strong> {{ $issueReports['orphan_pages'] }}</div>
+    </div>
+  </div>
+
+  <div class="rounded-lg bg-white shadow-sm ring-1 ring-gray-200 overflow-hidden">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-50 text-left text-gray-600">
+        <tr>
+          <th class="px-4 py-3 font-medium">URL</th>
+          <th class="px-4 py-3 font-medium">Status Code</th>
+          <th class="px-4 py-3 font-medium">Canonical</th>
+          <th class="px-4 py-3 font-medium">Depth</th>
+          <th class="px-4 py-3 font-medium">Internal Links</th>
+          <th class="px-4 py-3 font-medium">External Links</th>
+          <th class="px-4 py-3 font-medium">ALT count</th>
+          <th class="px-4 py-3 font-medium">Heading count</th>
+          <th class="px-4 py-3 font-medium">Errors</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        @forelse($pages as $page)
+          <tr>
+            <td class="px-4 py-3 break-all text-gray-900">{{ $page->url }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->status_code ?? $page->status ?? '—' }}</td>
+            <td class="px-4 py-3 break-all text-gray-700">{{ $page->canonical ?? $page->canonical_url ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->depth }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->internal_links_count ?? $page->internal_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->external_links_count ?? $page->external_links ?? '—' }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->alt_missing_count ?? $page->alt_count }}</td>
+            <td class="px-4 py-3 text-gray-700">{{ $page->heading_count }}</td>
+            <td class="px-4 py-3 text-red-600">{{ $page->error ?? '—' }}</td>
+          </tr>
+        @empty
+          <tr>
+            <td colspan="9" class="px-4 py-6 text-center text-gray-500">No crawl pages stored.</td>
+          </tr>
+        @endforelse
+      </tbody>
+    </table>
+  </div>
+
+  <div>
+    {{ $pages->links() }}
+  </div>
+
+  <div class="rounded border bg-white p-4">
+    <h2 class="text-lg font-semibold mb-3">Broken links report</h2>
+    <div class="space-y-2 text-sm">
+      @forelse($brokenLinks as $link)
+        <div class="border rounded p-2">
+          <div><strong>Source:</strong> {{ $link->source_url }}</div>
+          <div><strong>Target:</strong> {{ $link->target_url }}</div>
+          <div><strong>Status:</strong> {{ $link->status_code }}</div>
+        </div>
+      @empty
+        <p class="text-gray-500">No broken links detected.</p>
+      @endforelse
+    </div>
+  </div>
+
+  <div class="rounded border bg-white p-4">
+    <h2 class="text-lg font-semibold mb-3">Redirect chains report</h2>
+    <div class="space-y-2 text-sm">
+      @forelse($redirectChains as $link)
+        <div class="border rounded p-2 {{ $link->redirect_chain_length > 2 ? 'border-amber-500' : '' }}">
+          <div><strong>Source:</strong> {{ $link->source_url }}</div>
+          <div><strong>Redirect chain:</strong> {{ collect($link->redirect_chain ?? [])->pluck('url')->join(' → ') }}</div>
+          <div><strong>Final target:</strong> {{ $link->redirect_target ?? $link->target_url }}</div>
+          <div><strong>Chain length:</strong> {{ $link->redirect_chain_length }}</div>
+        </div>
+      @empty
+        <p class="text-gray-500">No redirects detected.</p>
+      @endforelse
+    </div>
+  </div>
+
+  <div class="rounded border bg-white p-4">
+    <h2 class="text-lg font-semibold mb-3">Orphan pages report</h2>
+    <div class="space-y-1 text-sm">
+      @forelse($orphanPages as $page)
+        <div class="border rounded p-2">{{ $page->url }}</div>
+      @empty
+        <p class="text-gray-500">No orphan pages detected.</p>
+      @endforelse
+    </div>
+  </div>
+</div>
+@endsection
+
+
+
+----- resources/views/dashboard/index.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+
+<div class="max-w-6xl mx-auto">
+
+  <h1 class="text-2xl font-semibold mb-8">
+    Dashboard
+  </h1>
+
+  <div class="grid grid-cols-2 gap-6 mb-10">
+
+    @foreach(config('reports.types') as $type => $report)
+
+    <a href="{{ route($report['route']) }}"
+      class="bg-white p-6 rounded shadow-sm hover:shadow-md transition border border-gray-100">
+
+      <h2 class="text-lg font-semibold mb-2">
+        {{ $report['label'] }}
+      </h2>
+
+      <p class="text-sm text-gray-600">
+        Neuen Report starten
+      </p>
+
+    </a>
+
+    @endforeach
+
+  </div>
+
+
+  <div class="bg-white rounded shadow-sm p-6 mb-10">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold">System Status</h2>
+      <a href="{{ route('queues.index') }}" class="text-sm text-blue-600 hover:underline">Queue Monitor öffnen</a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Queue Status</div>
+        <div class="space-y-1 text-sm">
+          <div><span class="font-semibold">Active Jobs:</span> {{ $activeJobs }}</div>
+          <div><span class="font-semibold">Queued Jobs:</span> {{ $queuedJobs }}</div>
+          <div><span class="font-semibold">Failed Jobs:</span> {{ $failedJobs }}</div>
+        </div>
+      </div>
+
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Running Scans</div>
+        <div class="text-2xl font-semibold text-yellow-700">{{ $runningScans }}</div>
+      </div>
+
+      <div class="rounded border border-gray-200 p-4">
+        <div class="text-xs uppercase text-gray-500 mb-2">Failed Scans</div>
+        <div class="text-2xl font-semibold text-red-700">{{ $failedScans }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex justify-between items-center mb-4">
+    <h2 class="text-lg font-semibold">
+      Letzte Reports
+    </h2>
+
+    <a href="{{ route('reports.index') }}"
+      class="text-sm text-blue-600 hover:underline">
+      Alle Reports anzeigen
+    </a>
+  </div>
+
+  <div class="bg-white rounded shadow-sm divide-y">
+
+    @forelse($latestReports as $report)
+
+    <a href="{{ route('reports.show', $report) }}"
+      class="flex justify-between items-center p-4 hover:bg-gray-50 transition">
+
+      <div>
+        <div class="text-sm font-medium">
+          {{ strtoupper($report->type) }} – {{ $report->url }}
+        </div>
+
+        <div class="text-xs text-gray-500">
+          {{ $report->created_at->format('d.m.Y H:i') }}
+        </div>
+      </div>
+
+      <div class="flex items-center gap-6">
+
+        <div class="text-sm font-semibold">
+          {{ $report->score ?? '-' }}
+        </div>
+
+        @php
+        $statusColors = [
+        'queued' => 'bg-gray-100 text-gray-600',
+        'running' => 'bg-yellow-100 text-yellow-700',
+        'done' => 'bg-green-100 text-green-700',
+        'aborted' => 'bg-red-100 text-red-700',
+        ];
+        @endphp
+
+        <span class="px-2 py-1 text-xs rounded {{ $statusColors[$report->status] ?? 'bg-gray-100 text-gray-600' }}">
+          {{ $report->status }}
+        </span>
+
+      </div>
+
+    </a>
+
+    @empty
+
+    <div class="p-6 text-sm text-gray-500">
+      Noch keine Reports vorhanden.
+    </div>
+
+    @endforelse
+
+  </div>
+
+</div>
+
+@endsection
+
+
+
+----- resources/views/layouts/app.blade.php -----
+
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+  <meta charset="UTF-8">
+  <title>{{ $title ?? 'Orange Tools' }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  @vite(['resources/css/app.css', 'resources/js/app.js'])
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script src="//unpkg.com/alpinejs" defer></script>
+</head>
+
+<body
+  class="bg-gray-50 text-gray-900 antialiased"
+  data-page="{{ $page ?? '' }}">
+
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div
+        class="flex h-16 items-center justify-between"
+        x-data="{ mobileMenuOpen: false }">
+        <div class="flex items-center space-x-3">
+          <a href="/">
+            <img src="{{ asset('images/os-logo.png') }}" alt="Logo" class="h-10 w-auto">
+            <!-- <span class="text-xl font-semibold text-gray-800">Orange Tools</span> -->
+          </a>
+        </div>
+
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-md p-2 text-gray-700 hover:bg-gray-100 md:hidden"
+          @click="mobileMenuOpen = !mobileMenuOpen"
+          aria-label="Toggle menu">
+          
+        </button>
+
+        <nav class="hidden md:flex md:flex-1 md:items-center md:text-sm md:font-medium md:ml-8">
+
+          <div class="flex items-center space-x-2">
+            @foreach(config('reports.types') as $type => $report)
+            <a href="{{ route($report['route']) }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              {{ $report['label'] }}
+            </a>
+            @endforeach
+
+            <a href="{{ route('projects.index') }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('analyses.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              Projects
+            </a>
+
+
+            <a href="{{ route('reports.index') }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              Reports
+            </a>
+
+            <a href="{{ route('crawls.index') }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              Crawls
+            </a>
+          </div>
+
+          <div
+            class="relative ml-auto"
+            x-data="{ open: false }"
+            @click.outside="open = false">
+            <button
+              type="button"
+              class="inline-flex items-center rounded-lg px-3 py-2 transition {{ request()->routeIs('logs.index') || request()->routeIs('logs.live') || request()->routeIs('queues.index') || request()->routeIs('admin.settings.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }}"
+              @click="open = !open"
+              aria-haspopup="true"
+              :aria-expanded="open.toString()">
+              System
+              
+            </button>
+
+            <div
+              x-cloak
+              x-show="open"
+              x-transition
+              class="absolute right-0 mt-2 w-52 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              <a href="{{ route('logs.index') }}"
+                class="block px-4 py-2 text-sm {{ request()->routeIs('logs.index') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                Logs
+              </a>
+              <a href="{{ route('logs.live') }}"
+                class="block px-4 py-2 text-sm {{ request()->routeIs('logs.live') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                Live Logs
+              </a>
+              <a href="{{ route('queues.index') }}"
+                class="block px-4 py-2 text-sm {{ request()->routeIs('queues.index') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                Queue Monitor
+              </a>
+              <a href="{{ route('admin.settings.index') }}"
+                class="block px-4 py-2 text-sm {{ request()->routeIs('admin.settings.*') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-50' }}">
+                Settings
+              </a>
+            </div>
+          </div>
+
+        </nav>
+
+      </div>
+
+      <div
+        x-cloak
+        x-show="mobileMenuOpen"
+        x-transition
+        class="border-t border-gray-200 pb-3 pt-2 md:hidden"
+        x-data="{ mobileSystemOpen: false }">
+        <div class="space-y-1 text-sm font-medium">
+          @foreach(config('reports.types') as $type => $report)
+          <a href="{{ route($report['route']) }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            {{ $report['label'] }}
+          </a>
+          @endforeach
+
+          <a href="{{ route('projects.index') }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('analyses.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Projects
+          </a>
+          <a href="{{ route('reports.index') }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Reports
+          </a>
+          <a href="{{ route('crawls.index') }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Crawls
+          </a>
+
+          <div class="pt-1">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left {{ request()->routeIs('logs.index') || request()->routeIs('logs.live') || request()->routeIs('queues.index') || request()->routeIs('admin.settings.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition"
+              @click="mobileSystemOpen = !mobileSystemOpen"
+              :aria-expanded="mobileSystemOpen.toString()">
+              <span>System</span>
+              
+            </button>
+
+            <div x-show="mobileSystemOpen" x-transition class="mt-1 space-y-1 pl-4">
+              <a href="{{ route('logs.index') }}"
+                class="block rounded-lg px-3 py-2 {{ request()->routeIs('logs.index') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Logs
+              </a>
+              <a href="{{ route('logs.live') }}"
+                class="block rounded-lg px-3 py-2 {{ request()->routeIs('logs.live') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Live Logs
+              </a>
+              <a href="{{ route('queues.index') }}"
+                class="block rounded-lg px-3 py-2 {{ request()->routeIs('queues.index') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Queue Monitor
+              </a>
+              <a href="{{ route('admin.settings.index') }}"
+                class="block rounded-lg px-3 py-2 {{ request()->routeIs('admin.settings.*') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-gray-700 hover:bg-gray-100' }}">
+                Settings
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+    @if (session('system_warnings'))
+    <div class="mb-6 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <div class="font-semibold mb-1">System warnings</div>
+      <ul class="list-disc ml-5 space-y-1">
+        @foreach ((array) session('system_warnings') as $warning)
+        <li>{{ $warning }}</li>
+        @endforeach
+      </ul>
+    </div>
+    @endif
+
+    @yield('content')
+  </main>
+
+  @yield('scripts')
+
+</body>
+
+</html>
+
+
+
+----- resources/views/localseo/form.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+
+@php($page = 'local-seo')
+
+<div class="max-w-3xl mx-auto bg-white shadow-sm rounded p-6">
+
+  <h1 class="text-xl font-semibold mb-6">
+    Local SEO Analyse
+  </h1>
+
+  <form id="local-seo-form" class="space-y-4">
+
+    <input
+      type="url"
+      name="url"
+      required
+      placeholder="https://example.com"
+      value="https://glas-service-muenchen.de"
+      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
+
+    <input
+      type="text"
+      name="keyword"
+      required
+      placeholder="Keyword (z.B. Glaserei)"
+      value="Glaserei"
+      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
+
+    <input
+      type="text"
+      name="city"
+      required
+      placeholder="Stadt (z.B. München)"
+      value="München"
+      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
+
+    <button
+      type="submit"
+      class="bg-orange-600 text-white px-6 py-2 rounded hover:bg-orange-700 transition">
+      Analyse starten
+    </button>
+
+  </form>
+
+</div>
+
+@endsection
+
+
+
+----- resources/views/logs/index.blade.php -----
+
+@extends('layouts.app')
+
+@section('content')
+<div class="bg-white shadow rounded-lg p-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-gray-900">System Logs</h1>
+      <p class="text-sm text-gray-500 mt-1">Recent application log events.</p>
+    </div>
+
+    <span id="entry-count" class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 w-fit">
+      {{ count($entries) }} entries
+    </span>
+  </div>
+
+  <div class="mb-4 max-w-xs">
+    <label for="log-level-filter" class="block text-sm font-medium text-gray-700 mb-1">Log Level</label>
+    <select id="log-level-filter" class="w-full rounded-lg border-gray-300 focus:border-orange-400 focus:ring-orange-400">
+      <option value="all" @selected($level === 'all')>All</option>
+      @foreach ($allowedLevels as $logLevel)

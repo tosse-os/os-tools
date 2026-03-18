@@ -1,26 +1,43 @@
 
 === EXPORT META ===
 
-Total Files Exported: 54
+Total Files Exported: 91
 
 === FILE STRUCTURE ===
 
 app
   Http
     Controllers
+      AdminSettingsController.php
+      AnalysisController.php
       Controller.php
+      CrawlController.php
       CrawlerController.php
+      CrawlerRuntimeController.php
       DashboardController.php
       LocalSeoController.php
       LogController.php
+      ProjectController.php
       QueueController.php
       ReportController.php
       ScanController.php
+    Middleware
+      RunSystemHealthChecks.php
   Jobs
+    RunCrawl.php
     RunLocalSeo.php
     RunMultiScan.php
     RunScan.php
   Models
+    Analysis.php
+    Crawl.php
+    CrawlEvent.php
+    CrawlJob.php
+    CrawlLink.php
+    CrawlPage.php
+    CrawlQueue.php
+    Issue.php
+    Project.php
     Report.php
     ReportResult.php
     Scan.php
@@ -29,9 +46,18 @@ app
   Providers
     AppServiceProvider.php
   Services
+    Crawler
+      CrawlLinkPersister.php
+      CrawlMetricsService.php
+      CrawlPagePersister.php
+      CrawlProgressService.php
+      CrawlerEventConsumer.php
+      CrawlerEventProcessor.php
+    IssueDetectionService.php
     ReportPersistenceService.php
     Scoring
       PriorityFactory.php
+    SystemHealthService.php
 database
   .gitignore
   factories
@@ -44,12 +70,17 @@ node-scanner
     headingCheck.js
     statusCheck.js
   core
+    crawler-worker.js
+    crawler.js
+    localSEOScanner.js
     localSeoScanner.js
     multiScanner.js
     scanner.js
   crawl
     crawlLinks.js
   utils
+    runtimeUtils.js
+    structuredLogger.js
     urlUtils.js
 resources
   css
@@ -61,8 +92,15 @@ resources
     modules
       localSeo.js
   views
+    admin
+      settings.blade.php
+    analyses
+      show.blade.php
     crawler
       form.blade.php
+    crawls
+      index.blade.php
+      show.blade.php
     dashboard
       index.blade.php
     layouts
@@ -72,13 +110,19 @@ resources
     logs
       index.blade.php
       live.blade.php
+      partials
+        table.blade.php
     multiscan
       live.blade.php
       result.blade.php
+    projects
+      index.blade.php
+      show.blade.php
     queues
       index.blade.php
     reports
       archive.blade.php
+      compare.blade.php
       index.blade.php
       show.blade.php
     scans
@@ -108,6 +152,131 @@ queued → running → done → aborted → failed
 === MODULE: HTTP LAYER ===
 
 
+----- app/Http/Controllers/AdminSettingsController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\View\View;
+
+class AdminSettingsController extends Controller
+{
+    private const SETTING_KEYS = [
+        'max_pages',
+        'max_depth',
+        'page_timeout',
+        'max_parallel_pages',
+        'max_retries',
+        'retry_delay',
+        'max_scan_time',
+        'crawler_use_redis',
+    ];
+
+    public function index(): View
+    {
+        $storedSettings = collect();
+
+        if (Schema::hasTable('system_settings')) {
+            $storedSettings = DB::table('system_settings')
+                ->whereIn('key', self::SETTING_KEYS)
+                ->pluck('value', 'key');
+        }
+
+        $settings = [];
+
+        foreach (self::SETTING_KEYS as $key) {
+            if ($key === 'crawler_use_redis') {
+                $settings[$key] = (bool) ((int) ($storedSettings[$key] ?? 0));
+                continue;
+            }
+
+            $settings[$key] = (int) ($storedSettings[$key] ?? config("seo.{$key}"));
+        }
+
+        return view('admin.settings', [
+            'settings' => $settings,
+            'settingKeys' => self::SETTING_KEYS,
+        ]);
+    }
+
+    public function update(Request $request): RedirectResponse
+    {
+        $rules = [];
+
+        foreach (self::SETTING_KEYS as $key) {
+            if ($key === 'crawler_use_redis') {
+                $rules[$key] = ['nullable', 'boolean'];
+                continue;
+            }
+
+            $rules[$key] = ['required', 'integer', 'min:1'];
+        }
+
+        $validated = $request->validate($rules);
+        $validated['crawler_use_redis'] = $request->boolean('crawler_use_redis');
+
+        if (! Schema::hasTable('system_settings')) {
+            return redirect()
+                ->route('admin.settings.index')
+                ->with('status', 'Settings table is not available yet. Please run migrations.');
+        }
+
+        $now = now();
+        $rows = [];
+
+        foreach (self::SETTING_KEYS as $key) {
+            $rows[] = [
+                'key' => $key,
+                'value' => (string) (int) $validated[$key],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        DB::table('system_settings')->upsert($rows, ['key'], ['value', 'updated_at']);
+
+        return redirect()
+            ->route('admin.settings.index')
+            ->with('status', 'Settings saved successfully.');
+    }
+}
+
+
+
+----- app/Http/Controllers/AnalysisController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Analysis;
+
+class AnalysisController extends Controller
+{
+    public function show(Analysis $analysis)
+    {
+        $analysis->load([
+            'project',
+            'reports' => fn($reportQuery) => $reportQuery
+                ->orderByDesc('started_at')
+                ->orderByDesc('created_at'),
+        ]);
+
+        if (auth()->check() && $analysis->project?->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        return view('analyses.show', compact('analysis'));
+    }
+}
+
+
+
 ----- app/Http/Controllers/Controller.php -----
 
 <?php
@@ -121,16 +290,189 @@ abstract class Controller
 
 
 
+----- app/Http/Controllers/CrawlController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Jobs\RunCrawl;
+use App\Models\Analysis;
+use App\Models\Crawl;
+use App\Models\Project;
+use App\Models\Report;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+class CrawlController extends Controller
+{
+    public function index()
+    {
+        $crawls = Crawl::query()
+            ->orderByDesc('created_at')
+            ->paginate(25);
+
+        return view('crawls.index', [
+            'crawls' => $crawls,
+        ]);
+    }
+
+    public function show(Crawl $crawl)
+    {
+        $pages = $crawl->pages()
+            ->orderByDesc('id')
+            ->paginate(100);
+
+        $summary = [
+            'pages_crawled' => (int) ($crawl->pages_scanned + $crawl->pages_failed),
+            'internal_links' => (int) $crawl->links()->where('type', 'internal')->count(),
+            'external_links' => (int) $crawl->links()->where('type', 'external')->count(),
+            'broken_links' => (int) $crawl->links()->where('status_code', '>=', 400)->count(),
+            'redirects' => (int) $crawl->links()->whereIn('status_code', [301, 302, 307, 308])->count(),
+            'duplicate_pages' => (int) $crawl->pages()
+                ->selectRaw('COALESCE(text_hash, content_hash) as duplicate_hash')
+                ->where(function ($query) {
+                    $query->whereNotNull('text_hash')->orWhereNotNull('content_hash');
+                })
+                ->groupBy('duplicate_hash')
+                ->havingRaw('COUNT(*) > 1')
+                ->get()
+                ->count(),
+            'broken_pages' => (int) $crawl->pages()->where('status_code', '>=', 400)->count(),
+        ];
+
+        $issuesByType = collect();
+        if (Schema::hasTable('crawl_issues')) {
+            $issuesByType = DB::table('crawl_issues')
+                ->where('crawl_id', $crawl->id)
+                ->selectRaw('type, COUNT(*) as total')
+                ->groupBy('type')
+                ->pluck('total', 'type');
+        }
+
+        $issueReports = [
+            'missing_alt' => (int) ($issuesByType['missing_alt'] ?? $crawl->pages()->where('alt_missing_count', '>', 0)->count()),
+            'missing_h1' => (int) ($issuesByType['missing_h1'] ?? $crawl->pages()->where('h1_count', '=', 0)->count()),
+            'broken_links' => (int) ($issuesByType['broken_link'] ?? $summary['broken_links']),
+            'redirect_chains' => (int) ($issuesByType['redirect_chain'] ?? $crawl->links()->where('redirect_chain_length', '>', 1)->count()),
+            'duplicate_pages' => $summary['duplicate_pages'],
+            'orphan_pages' => $crawl->pages()->where('internal_links_in', 0)->where('depth', '>', 0)->count(),
+        ];
+
+        $brokenLinks = $crawl->links()
+            ->where('status_code', '>=', 400)
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        $redirectChains = $crawl->links()
+            ->whereIn('status_code', [301, 302, 307, 308])
+            ->where('redirect_chain_length', '>', 0)
+            ->orderByDesc('redirect_chain_length')
+            ->limit(200)
+            ->get();
+
+        $orphanPages = $crawl->pages()
+            ->where('internal_links_in', 0)
+            ->where('depth', '>', 0)
+            ->orderBy('url')
+            ->get();
+
+        return view('crawls.show', [
+            'crawl' => $crawl,
+            'pages' => $pages,
+            'summary' => $summary,
+            'issueReports' => $issueReports,
+            'brokenLinks' => $brokenLinks,
+            'redirectChains' => $redirectChains,
+            'orphanPages' => $orphanPages,
+        ]);
+    }
+
+
+    public function rerun(Crawl $crawl): RedirectResponse
+    {
+        $analysis = $this->findOrCreateAnalysis(
+            auth()->id(),
+            $crawl->entry_url,
+            null,
+            null,
+        );
+
+        $report = Report::create([
+            'id' => (string) Str::uuid(),
+            'user_id' => auth()->id(),
+            'analysis_id' => $analysis->id,
+            'type' => 'crawler',
+            'url' => $crawl->entry_url,
+            'status' => 'queued',
+        ]);
+
+        Crawl::create([
+            'id' => $report->id,
+            'domain' => parse_url($crawl->entry_url, PHP_URL_HOST) ?: $crawl->entry_url,
+            'root_url' => $crawl->entry_url,
+            'start_url' => $crawl->entry_url,
+            'status' => 'queued',
+            'pages_discovered' => 1,
+            'pages_scanned' => 0,
+            'pages_failed' => 0,
+        ]);
+
+        RunCrawl::dispatch($report->id);
+
+        return redirect()
+            ->route('crawls.show', $report->id)
+            ->with('status', 'Crawl was queued again.');
+    }
+
+    private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+    {
+        $domain = parse_url($url, PHP_URL_HOST) ?: $url;
+
+        $project = Project::firstOrCreate(
+            [
+                'user_id' => $userId,
+                'domain' => $domain,
+            ],
+            [
+                'id' => (string) Str::uuid(),
+                'name' => $domain,
+            ],
+        );
+
+        return Analysis::firstOrCreate(
+            [
+                'project_id' => $project->id,
+                'url' => $url,
+                'keyword' => $keyword,
+                'city' => $city,
+            ],
+            [
+                'id' => (string) Str::uuid(),
+            ],
+        );
+    }
+
+}
+
+
+
 ----- app/Http/Controllers/CrawlerController.php -----
 
 <?php
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Jobs\RunCrawl;
+use App\Models\Analysis;
+use App\Models\Crawl;
+use App\Models\Project;
 use App\Models\Report;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use App\Jobs\RunScan;
 
 class CrawlerController extends Controller
 {
@@ -145,20 +487,142 @@ class CrawlerController extends Controller
       'url' => 'required|url'
     ]);
 
+    $analysis = $this->findOrCreateAnalysis(
+      auth()->id(),
+      $request->url,
+      null,
+      null,
+    );
+
     $report = Report::create([
       'id' => (string) Str::uuid(),
       'user_id' => auth()->id(),
+      'analysis_id' => $analysis->id,
       'type' => 'crawler',
       'url' => $request->url,
       'status' => 'queued'
     ]);
 
-    RunScan::dispatch($report->id, []);
+    Crawl::create([
+      'id' => $report->id,
+      'domain' => parse_url($request->url, PHP_URL_HOST) ?: $request->url,
+      'root_url' => $request->url,
+      'start_url' => $request->url,
+      'status' => 'queued',
+      'pages_discovered' => 1,
+      'pages_scanned' => 0,
+      'pages_failed' => 0,
+    ]);
+
+    RunCrawl::dispatch($report->id);
 
     return response()->json([
       'reportId' => $report->id
     ]);
   }
+
+  private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+  {
+    $domain = parse_url($url, PHP_URL_HOST) ?: $url;
+
+    $project = Project::firstOrCreate(
+      [
+        'user_id' => $userId,
+        'domain' => $domain,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+        'name' => $domain,
+      ],
+    );
+
+    return Analysis::firstOrCreate(
+      [
+        'project_id' => $project->id,
+        'url' => $url,
+        'keyword' => $keyword,
+        'city' => $city,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+      ],
+    );
+  }
+}
+
+
+
+----- app/Http/Controllers/CrawlerRuntimeController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Services\Crawler\CrawlerEventProcessor;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+class CrawlerRuntimeController extends Controller
+{
+    public function event(Request $request, CrawlerEventProcessor $processor): JsonResponse
+    {
+        $payload = $request->validate([
+            'crawl_id' => ['required', 'string'],
+            'type' => ['required', 'string'],
+            'payload' => ['nullable', 'array'],
+        ]);
+
+        Log::info('crawler event received from http endpoint', [
+            'event_type' => $payload['type'],
+            'event_crawl_id' => $payload['crawl_id'],
+            'payload' => $payload['payload'] ?? null,
+        ]);
+
+        $processed = $processor->process($payload['crawl_id'], $payload);
+
+        return response()->json(['processed' => $processed]);
+    }
+
+    public function nextTask(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'crawl_id' => ['required', 'string'],
+        ]);
+
+        $next = DB::transaction(function () use ($data) {
+            $record = DB::table('crawl_queue')
+                ->where('crawl_id', $data['crawl_id'])
+                ->where('status', 'pending')
+                ->orderBy('created_at')
+                ->lockForUpdate()
+                ->first();
+
+            if (!$record) {
+                return null;
+            }
+
+            DB::table('crawl_queue')
+                ->where('crawl_id', $data['crawl_id'])
+                ->where('url', $record->url)
+                ->update(['status' => 'processing']);
+
+            return $record;
+        });
+
+        if (!$next) {
+            return response()->json(['task' => null]);
+        }
+
+        return response()->json([
+            'task' => [
+                'crawl_id' => $next->crawl_id,
+                'url' => $next->url,
+                'depth' => (int) $next->depth,
+            ],
+        ]);
+    }
 }
 
 
@@ -170,12 +634,15 @@ class CrawlerController extends Controller
 namespace App\Http\Controllers;
 
 use App\Models\Report;
+use App\Models\Scan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
     public function index()
     {
-        $query = \App\Models\Report::query();
+        $query = Report::query();
 
         if (auth()->check()) {
             $query->where('user_id', auth()->id());
@@ -186,7 +653,27 @@ class DashboardController extends Controller
             ->limit(8)
             ->get();
 
-        return view('dashboard.index', compact('latestReports'));
+        $queuedJobs = DB::table('jobs')->count();
+        $failedJobs = DB::table('failed_jobs')->count();
+
+        $activeJobs = $queuedJobs;
+        if (Schema::hasColumn('jobs', 'reserved_at')) {
+            $activeJobs = DB::table('jobs')
+                ->whereNotNull('reserved_at')
+                ->count();
+        }
+
+        $runningScans = Scan::where('status', 'running')->count();
+        $failedScans = Scan::where('status', 'failed')->count();
+
+        return view('dashboard.index', compact(
+            'latestReports',
+            'activeJobs',
+            'queuedJobs',
+            'failedJobs',
+            'runningScans',
+            'failedScans'
+        ));
     }
 }
 
@@ -198,10 +685,12 @@ class DashboardController extends Controller
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Report;
-use Illuminate\Support\Str;
 use App\Jobs\RunLocalSeo;
+use App\Models\Analysis;
+use App\Models\Project;
+use App\Models\Report;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class LocalSeoController extends Controller
 {
@@ -218,11 +707,21 @@ class LocalSeoController extends Controller
       'city' => 'required|string'
     ]);
 
+    $analysis = $this->findOrCreateAnalysis(
+      auth()->id(),
+      $request->url,
+      $request->keyword,
+      $request->city,
+    );
+
     $report = Report::create([
       'id' => (string) Str::uuid(),
       'user_id' => auth()->id(),
+      'analysis_id' => $analysis->id,
       'type' => 'local_seo',
       'url' => $request->url,
+      'keyword' => $request->keyword,
+      'city' => $request->city,
       'status' => 'queued'
     ]);
 
@@ -236,6 +735,34 @@ class LocalSeoController extends Controller
       'reportId' => $report->id
     ]);
   }
+
+  private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+  {
+    $domain = parse_url($url, PHP_URL_HOST) ?: $url;
+
+    $project = Project::firstOrCreate(
+      [
+        'user_id' => $userId,
+        'domain' => $domain,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+        'name' => $domain,
+      ],
+    );
+
+    return Analysis::firstOrCreate(
+      [
+        'project_id' => $project->id,
+        'url' => $url,
+        'keyword' => $keyword,
+        'city' => $city,
+      ],
+      [
+        'id' => (string) Str::uuid(),
+      ],
+    );
+  }
 }
 
 
@@ -246,69 +773,171 @@ class LocalSeoController extends Controller
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
+use Illuminate\View\View;
+
 class LogController extends Controller
 {
-  public function index()
-  {
-    $path = storage_path('logs/laravel.log');
+    private const ALLOWED_LEVELS = ['debug', 'info', 'notice', 'warning', 'error', 'critical'];
 
-    if (!file_exists($path)) {
-      return view('logs.index', [
-        'entries' => []
-      ]);
+    /** @return array<int, array<string, mixed>> */
+    protected function readLogs(?string $level = null): array
+    {
+        $paths = collect(File::glob(storage_path('logs/*.log')) ?: [])
+            ->filter(fn (string $path) => str_ends_with($path, '.log'))
+            ->values();
+
+        $entries = [];
+
+        foreach ($paths as $path) {
+            $entries = array_merge($entries, $this->parseLogFile($path));
+        }
+
+        if ($level && in_array($level, self::ALLOWED_LEVELS, true)) {
+            $entries = array_values(array_filter($entries, fn (array $entry) => ($entry['level'] ?? 'info') === $level));
+        }
+
+        usort($entries, static function (array $a, array $b) {
+            return strtotime((string) ($b['timestamp'] ?? '')) <=> strtotime((string) ($a['timestamp'] ?? ''));
+        });
+
+        return $entries;
     }
 
-    $lines = file($path);
-    $entries = [];
+    /** @return array<int, array<string, mixed>> */
+    private function parseLogFile(string $path): array
+    {
+        $lines = @file($path) ?: [];
+        $entries = [];
+        $current = null;
+        $source = basename($path);
 
-    foreach (array_slice($lines, -200) as $line) {
+        foreach ($lines as $line) {
+            $line = preg_replace('/\e\[[\d;]*m/', '', (string) $line);
+            $line = trim((string) $line);
 
-      $line = preg_replace('/\e\[[\d;]*m/', '', $line);
-      $line = trim($line);
+            if (preg_match('/^\[(.*?)\]\s+([^\.]+)\.([A-Z]+):\s+(.*)$/', $line, $m)) {
+                if ($current) {
+                    $entries[] = $current;
+                }
 
-      if (preg_match('/^\[(.*?)\]\s+(\w+)\.(\w+):\s+(.*)$/', $line, $matches)) {
+                $current = [
+                    'timestamp' => $m[1],
+                    'environment' => $m[2],
+                    'level' => strtolower($m[3]),
+                    'message' => $m[4],
+                    'trace' => [],
+                    'source' => $source,
+                ];
 
-        $entries[] = [
-          'timestamp' => $matches[1],
-          'environment' => $matches[2],
-          'level' => strtolower($matches[3]),
-          'message' => $matches[4],
-        ];
-      } else {
+                continue;
+            }
 
-        $entries[] = [
-          'timestamp' => '',
-          'environment' => '',
-          'level' => 'info',
-          'message' => $line,
-        ];
-      }
+            if ($current) {
+                $current['trace'][] = $line;
+            }
+        }
+
+        if ($current) {
+            $entries[] = $current;
+        }
+
+        return $entries;
     }
 
-    return view('logs.index', [
-      'entries' => array_reverse($entries)
-    ]);
-  }
+    public function index(Request $request): View|JsonResponse
+    {
+        $level = strtolower((string) $request->query('level', 'all'));
+        $filterLevel = $level === 'all' ? null : $level;
+        $entries = array_slice($this->readLogs($filterLevel), 0, 200);
 
-  public function raw()
-  {
-    $path = storage_path('logs/laravel.log');
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('logs.partials.table', ['entries' => $entries])->render(),
+                'count' => count($entries),
+            ]);
+        }
 
-    if (!file_exists($path)) {
-      return response()->json([]);
+        return view('logs.index', [
+            'entries' => $entries,
+            'level' => $level,
+            'allowedLevels' => self::ALLOWED_LEVELS,
+        ]);
     }
 
-    $lines = file($path);
-    $clean = [];
+    public function raw(Request $request): JsonResponse
+    {
+        $level = strtolower((string) $request->query('level', 'all'));
 
-    foreach (array_slice($lines, -200) as $line) {
-
-      $line = preg_replace('/\e\[[\d;]*m/', '', $line);
-      $clean[] = trim($line);
+        return response()->json($this->readLogs($level === 'all' ? null : $level));
     }
 
-    return response()->json($clean);
-  }
+    public function clear(Request $request)
+    {
+        File::put(storage_path('logs/laravel.log'), '');
+
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'ok']);
+        }
+
+        return redirect()->route('logs.live');
+    }
+}
+
+
+
+----- app/Http/Controllers/ProjectController.php -----
+
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Project;
+
+class ProjectController extends Controller
+{
+    public function index()
+    {
+        $query = Project::query()
+            ->withCount('analyses')
+            ->with([
+                'analyses.reports' => fn($reportQuery) => $reportQuery
+                    ->select('id', 'analysis_id', 'started_at')
+                    ->orderByDesc('started_at'),
+            ])
+            ->orderBy('name');
+
+        if (auth()->check()) {
+            $query->where('user_id', auth()->id());
+        }
+
+        $projects = $query->get();
+
+        return view('projects.index', compact('projects'));
+    }
+
+    public function show(Project $project)
+    {
+        if (auth()->check() && $project->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        $project->load([
+            'analyses' => fn($analysisQuery) => $analysisQuery
+                ->withCount('reports')
+                ->with([
+                    'reports' => fn($reportQuery) => $reportQuery
+                        ->select('id', 'analysis_id', 'score', 'started_at')
+                        ->orderByDesc('started_at'),
+                ])
+                ->orderBy('keyword')
+                ->orderBy('city'),
+        ]);
+
+        return view('projects.show', compact('project'));
+    }
 }
 
 
@@ -319,6 +948,8 @@ class LogController extends Controller
 
 namespace App\Http\Controllers;
 
+use App\Models\Scan;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
 class QueueController extends Controller
@@ -331,11 +962,31 @@ class QueueController extends Controller
       ->get();
 
     $failedJobs = DB::table('failed_jobs')
-      ->select('id', 'exception')
+      ->select('id', 'payload', 'exception', 'failed_at')
       ->orderByDesc('id')
       ->get();
 
-    return view('queues.index', compact('jobs', 'failedJobs'));
+    $activeWorkers = (int) env('SCAN_WORKERS', 4);
+    $activeScans = Scan::where('status', 'running')->count();
+    $queuedScans = Scan::where('status', 'queued')->count();
+    $failedScans = Scan::where('status', 'failed')->count();
+
+    return view('queues.index', compact('jobs', 'failedJobs', 'activeWorkers', 'activeScans', 'queuedScans', 'failedScans'));
+  }
+
+  public function workers(): JsonResponse
+  {
+    $activeWorkers = (int) env('SCAN_WORKERS', 4);
+    $lastScan = Scan::query()
+      ->whereNotNull('finished_at')
+      ->orderByDesc('finished_at')
+      ->first();
+
+    return response()->json([
+      'active_workers' => $activeWorkers,
+      'last_scan_time' => $lastScan?->finished_at,
+      'worker_status' => $activeWorkers > 0 ? 'running' : 'stopped',
+    ]);
   }
 }
 
@@ -347,11 +998,14 @@ class QueueController extends Controller
 
 namespace App\Http\Controllers;
 
+use App\Models\CrawlLink;
+use App\Models\CrawlPage;
 use App\Models\Report;
+use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
-  public function index()
+  public function index(Request $request)
   {
     $query = Report::query();
 
@@ -359,15 +1013,23 @@ class ReportController extends Controller
       $query->where('user_id', auth()->id());
     }
 
+    $this->applyArchiveFilters($query, $request);
+
     $reports = $query
+      ->with('analysis.project')
       ->latest()
-      ->limit(6)
+      ->limit(60)
       ->get();
 
-    return view('reports.index', compact('reports'));
+    $reportContexts = $this->buildReportContexts($reports);
+
+    return view('reports.index', [
+      'reportContexts' => $reportContexts,
+      'filters' => $this->extractFilters($request),
+    ]);
   }
 
-  public function archive()
+  public function archive(Request $request)
   {
     $query = Report::query();
 
@@ -375,11 +1037,19 @@ class ReportController extends Controller
       $query->where('user_id', auth()->id());
     }
 
-    $reports = $query
-      ->latest()
-      ->paginate(25);
+    $this->applyArchiveFilters($query, $request);
 
-    return view('reports.archive', compact('reports'));
+    $reports = $query
+      ->with('analysis.project')
+      ->latest()
+      ->get();
+
+    $reportContexts = $this->buildReportContexts($reports);
+
+    return view('reports.archive', [
+      'reportContexts' => $reportContexts,
+      'filters' => $this->extractFilters($request),
+    ]);
   }
 
   public function show(Report $report)
@@ -388,9 +1058,489 @@ class ReportController extends Controller
       abort(403);
     }
 
-    $report->load('results');
+    $report->load(['results', 'issues', 'analysis.project']);
 
-    return view('reports.show', compact('report'));
+
+    $issuesSummary = [
+      'issues_total' => $report->issues->count(),
+      'critical_count' => $report->issues->where('severity', 'critical')->count(),
+      'warning_count' => $report->issues->where('severity', 'warning')->count(),
+    ];
+
+    $report->setAttribute('issues_total', $issuesSummary['issues_total']);
+    $report->setAttribute('critical_count', $issuesSummary['critical_count']);
+    $report->setAttribute('warning_count', $issuesSummary['warning_count']);
+
+    $issueTypeSummary = $report->issues
+      ->groupBy('type')
+      ->map(fn($group) => $group->count())
+      ->all();
+
+    $timelineQuery = Report::query()->orderBy('started_at');
+
+    if ($report->analysis_id) {
+      $timelineQuery->where('analysis_id', $report->analysis_id);
+    } else {
+      $this->applyContextMatch($timelineQuery, 'url', $report->url);
+      $this->applyContextMatch($timelineQuery, 'keyword', $report->keyword);
+      $this->applyContextMatch($timelineQuery, 'city', $report->city);
+    }
+
+    if (auth()->check()) {
+      $timelineQuery->where('user_id', auth()->id());
+    }
+
+    $timelineReports = $timelineQuery->get(['id', 'score', 'started_at']);
+
+    $timeline = [
+      'labels' => $timelineReports
+        ->pluck('started_at')
+        ->map(fn($startedAt) => $startedAt ? date('d.m.Y H:i', strtotime((string) $startedAt)) : '—')
+        ->values()
+        ->all(),
+      'data' => $timelineReports
+        ->pluck('score')
+        ->map(fn($score) => is_numeric($score) ? (float) $score : null)
+        ->values()
+        ->all(),
+    ];
+
+    $currentReportPosition = $timelineReports->search(fn($timelineReport) => $timelineReport->id === $report->id);
+    $previousContextReport = is_int($currentReportPosition) && $currentReportPosition > 0
+      ? $timelineReports->get($currentReportPosition - 1)
+      : null;
+
+    $regression = null;
+    $moduleRegressions = [];
+
+    if ($previousContextReport) {
+      $latestScore = is_numeric($report->score) ? (float) $report->score : null;
+      $previousScore = is_numeric($previousContextReport->score) ? (float) $previousContextReport->score : null;
+
+      if ($latestScore !== null && $previousScore !== null) {
+        $delta = $latestScore - $previousScore;
+        if ($delta < -10) {
+          $regression = [
+            'delta' => $delta,
+            'drop' => abs($delta),
+          ];
+        }
+      }
+
+      $previousReportModel = Report::with('results')->find($previousContextReport->id);
+      $latestBreakdown = $this->extractBreakdown($report);
+      $previousBreakdown = $previousReportModel ? $this->extractBreakdown($previousReportModel) : [];
+
+      $trackedModules = [
+        'h1' => 'H1',
+        'title' => 'Title',
+        'content' => 'Content',
+        'schema' => 'Schema',
+        'nap' => 'Nap',
+        'consistency' => 'Consistency',
+      ];
+
+      foreach ($trackedModules as $moduleKey => $label) {
+        $latestModuleScore = data_get($latestBreakdown, $moduleKey . '.score');
+        $previousModuleScore = data_get($previousBreakdown, $moduleKey . '.score');
+
+        if (!is_numeric($latestModuleScore) || !is_numeric($previousModuleScore)) {
+          continue;
+        }
+
+        $moduleDelta = (float) $latestModuleScore - (float) $previousModuleScore;
+        if ($moduleDelta < -3) {
+          $moduleRegressions[] = [
+            'label' => $label . ' Regression',
+            'delta' => $moduleDelta,
+            'drop' => abs($moduleDelta),
+          ];
+        }
+      }
+    }
+
+    $breakdown = $this->extractBreakdown($report);
+    $insights = [];
+
+    $contentScore = data_get($breakdown, 'content.score');
+    if (is_numeric($contentScore) && (float) $contentScore < 5) {
+      $insights[] = [
+        'severity' => 1,
+        'title' => 'Content zu schwach',
+        'recommendation' => 'Empfehlung: mehr Text und Keyword Integration',
+        'score' => (float) $contentScore,
+      ];
+    }
+
+    $titleScore = data_get($breakdown, 'title.score');
+    if (is_numeric($titleScore) && (float) $titleScore < 15) {
+      $insights[] = [
+        'severity' => 2,
+        'title' => 'Title Optimierung möglich',
+        'recommendation' => null,
+        'score' => (float) $titleScore,
+      ];
+    }
+
+    $schemaScore = data_get($breakdown, 'schema.score');
+    if (is_numeric($schemaScore) && (float) $schemaScore === 0.0) {
+      $insights[] = [
+        'severity' => 0,
+        'title' => 'Schema fehlt',
+        'recommendation' => null,
+        'score' => (float) $schemaScore,
+      ];
+    }
+
+    $insights = collect($insights)
+      ->sortBy(fn($item) => [$item['severity'], $item['score']])
+      ->values()
+      ->all();
+
+    $crawlPages = collect();
+    $crawlSummary = [
+      'pages_crawled' => 0,
+      'internal_links' => 0,
+      'external_links' => 0,
+    ];
+
+    if ($report->type === 'crawler') {
+      $crawlPages = CrawlPage::query()
+        ->where('crawl_id', $report->id)
+        ->orderBy('depth')
+        ->orderBy('url')
+        ->get([
+          'url',
+          'depth',
+          'status_code',
+          'canonical',
+          'title',
+          'meta_description',
+          'h1_count',
+          'heading_count',
+          'image_count',
+          'alt_missing_count',
+          'internal_links',
+          'external_links',
+          'internal_links_count',
+          'external_links_count',
+          'text_hash',
+        ]);
+
+      $crawlSummary = [
+        'pages_crawled' => $crawlPages->count(),
+        'internal_links' => CrawlLink::where('crawl_id', $report->id)->where(function ($q) { $q->where('type', 'internal')->orWhere('link_type', 'internal'); })->count(),
+        'external_links' => CrawlLink::where('crawl_id', $report->id)->where(function ($q) { $q->where('type', 'external')->orWhere('link_type', 'external'); })->count(),
+      ];
+    }
+
+    return view('reports.show', [
+      'report' => $report,
+      'timeline' => $timeline,
+      'regression' => $regression,
+      'moduleRegressions' => $moduleRegressions,
+      'insights' => $insights,
+      'issuesSummary' => $issuesSummary,
+      'issueTypeSummary' => $issueTypeSummary,
+      'crawlPages' => $crawlPages,
+      'crawlSummary' => $crawlSummary,
+    ]);
+  }
+
+  public function compare(Request $request)
+  {
+    $ids = collect($request->input('reports', []))
+      ->filter()
+      ->unique()
+      ->values();
+
+    if ($ids->count() < 2) {
+      return redirect()->back()->withErrors([
+        'reports' => 'Bitte mindestens 2 Reports für den Vergleich auswählen.',
+      ])->withInput();
+    }
+
+    if ($ids->count() > 4) {
+      return redirect()->back()->withErrors([
+        'reports' => 'Bitte maximal 4 Reports für den Vergleich auswählen.',
+      ])->withInput();
+    }
+
+    $reports = Report::with('results')
+      ->whereIn('id', $ids)
+      ->get()
+      ->sortBy(fn($report) => $ids->search($report->id))
+      ->values();
+
+    if ($reports->count() !== $ids->count()) {
+      return redirect()->back()->withErrors([
+        'reports' => 'Mindestens ein ausgewählter Report wurde nicht gefunden.',
+      ])->withInput();
+    }
+
+    if (auth()->check() && $reports->contains(fn($report) => $report->user_id !== auth()->id())) {
+      abort(403);
+    }
+
+    $comparisonModules = [];
+    $comparisonData = [];
+
+    foreach ($reports as $report) {
+      $reportBreakdown = [];
+
+      foreach ($report->results as $result) {
+        $payload = is_array($result->payload)
+          ? $result->payload
+          : json_decode((string) $result->payload, true);
+
+        if (!is_array($payload) || !is_array(data_get($payload, 'breakdown'))) {
+          continue;
+        }
+
+        foreach ($payload['breakdown'] as $moduleName => $moduleData) {
+          if (!isset($reportBreakdown[$moduleName])) {
+            $reportBreakdown[$moduleName] = $moduleData;
+          }
+        }
+      }
+
+      foreach ($reportBreakdown as $moduleName => $moduleData) {
+        $comparisonModules[$moduleName] = $moduleName;
+
+        $checks = [];
+        foreach ((array) data_get($moduleData, 'checks', []) as $checkKey => $checkValue) {
+          $checks[] = [
+            'label' => is_string($checkKey) ? $checkKey : (string) $checkValue,
+            'passed' => (bool) $checkValue,
+          ];
+        }
+
+        $comparisonData[$moduleName][$report->id] = [
+          'score' => data_get($moduleData, 'score'),
+          'max_score' => data_get($moduleData, 'max_score'),
+          'missing' => array_values((array) data_get($moduleData, 'missing', [])),
+          'checks' => $checks,
+        ];
+      }
+    }
+
+    $comparisonModules = collect($comparisonModules)->values()->all();
+
+    $scoreDifferences = [];
+
+    foreach ($comparisonModules as $moduleName) {
+      $moduleScores = [];
+
+      foreach ($reports as $report) {
+        $moduleScores[$report->id] = data_get($comparisonData, "{$moduleName}.{$report->id}.score");
+      }
+
+      $firstReportId = optional($reports->first())->id;
+      $lastReportId = optional($reports->last())->id;
+      $firstScore = $firstReportId ? ($moduleScores[$firstReportId] ?? null) : null;
+      $lastScore = $lastReportId ? ($moduleScores[$lastReportId] ?? null) : null;
+      $difference = is_numeric($firstScore) && is_numeric($lastScore)
+        ? $lastScore - $firstScore
+        : null;
+
+      $scoreDifferences[$moduleName] = [
+        'scores' => $moduleScores,
+        'difference' => $difference,
+        'difference_text' => $difference === null ? '–' : (($difference > 0 ? '+' : '') . $difference),
+        'difference_class' => $difference > 0
+          ? 'text-green-600'
+          : ($difference < 0 ? 'text-red-600' : 'text-gray-600'),
+      ];
+    }
+
+    $mode = $request->query('mode', 'modules');
+    if (!in_array($mode, ['modules', 'delta'], true)) {
+      $mode = 'modules';
+    }
+
+    $contextKeys = $reports->map(function ($report) {
+      return $this->buildContextKey($report);
+    })->unique()->values();
+
+    $baseReport = $reports->first();
+    $comparisonReport = $reports->last();
+
+    $comparisonRows = collect($comparisonModules)
+      ->map(function ($moduleName) use ($comparisonData, $baseReport, $comparisonReport) {
+        $baseScore = data_get($comparisonData, $moduleName . '.' . optional($baseReport)->id . '.score');
+        $compareScore = data_get($comparisonData, $moduleName . '.' . optional($comparisonReport)->id . '.score');
+        $baseMax = data_get($comparisonData, $moduleName . '.' . optional($baseReport)->id . '.max_score');
+        $compareMax = data_get($comparisonData, $moduleName . '.' . optional($comparisonReport)->id . '.max_score');
+
+        $delta = is_numeric($baseScore) && is_numeric($compareScore)
+          ? (float) $compareScore - (float) $baseScore
+          : null;
+
+        return [
+          'module' => $moduleName,
+          'module_label' => ucfirst($moduleName),
+          'base_score' => is_numeric($baseScore) ? (float) $baseScore : null,
+          'compare_score' => is_numeric($compareScore) ? (float) $compareScore : null,
+          'base_max' => is_numeric($baseMax) ? (float) $baseMax : null,
+          'compare_max' => is_numeric($compareMax) ? (float) $compareMax : null,
+          'delta' => $delta,
+          'delta_text' => $delta === null ? '–' : (($delta > 0 ? '+' : '') . $delta),
+          'delta_class' => $delta > 0
+            ? 'text-green-600'
+            : ($delta < 0 ? 'text-red-600' : 'text-gray-600'),
+          'base_bar' => is_numeric($baseScore) ? str_repeat('█', max(1, (int) round((float) $baseScore))) : '',
+          'compare_bar' => is_numeric($compareScore) ? str_repeat('█', max(1, (int) round((float) $compareScore))) : '',
+        ];
+      })
+      ->values();
+
+    $largestChange = $comparisonRows
+      ->filter(fn($row) => $row['delta'] !== null)
+      ->sortByDesc(fn($row) => abs($row['delta']))
+      ->first();
+
+    $changedModules = $comparisonRows
+      ->filter(fn($row) => $row['delta'] !== null && $row['delta'] != 0)
+      ->values();
+
+    return view('reports.compare', [
+      'reports' => $reports,
+      'comparisonModules' => $comparisonModules,
+      'comparisonData' => $comparisonData,
+      'scoreDifferences' => $scoreDifferences,
+      'mode' => $mode,
+      'compareQuery' => ['reports' => $reports->pluck('id')->all()],
+      'hasContextMismatch' => $contextKeys->count() > 1,
+      'baseReport' => $baseReport,
+      'comparisonReport' => $comparisonReport,
+      'comparisonRows' => $comparisonRows,
+      'largestChange' => $largestChange,
+      'changedModules' => $changedModules,
+    ]);
+  }
+
+  private function applyContextMatch($query, string $column, $value): void
+  {
+    $normalized = trim((string) ($value ?? ''));
+
+    if ($normalized === '') {
+      $query->where(function ($innerQuery) use ($column) {
+        $innerQuery->whereNull($column)->orWhere($column, '');
+      });
+
+      return;
+    }
+
+    $query->where($column, $normalized);
+  }
+
+  private function extractBreakdown(Report $report): array
+  {
+    foreach ($report->results as $result) {
+      $payload = is_array($result->payload)
+        ? $result->payload
+        : json_decode((string) $result->payload, true);
+
+      if (is_array($payload) && is_array(data_get($payload, 'breakdown'))) {
+        return $payload['breakdown'];
+      }
+    }
+
+    return [];
+  }
+
+  private function applyArchiveFilters($query, Request $request): void
+  {
+    $keyword = trim((string) $request->query('keyword', ''));
+    if ($keyword !== '') {
+      $query->where('keyword', 'like', '%' . $keyword . '%');
+    }
+
+    $city = trim((string) $request->query('city', ''));
+    if ($city !== '') {
+      $query->where('city', 'like', '%' . $city . '%');
+    }
+
+    $domain = trim((string) $request->query('domain', ''));
+    if ($domain !== '') {
+      $query->where('url', 'like', '%' . $domain . '%');
+    }
+  }
+
+  private function extractFilters(Request $request): array
+  {
+    return [
+      'keyword' => trim((string) $request->query('keyword', '')),
+      'city' => trim((string) $request->query('city', '')),
+      'domain' => trim((string) $request->query('domain', '')),
+    ];
+  }
+
+  private function buildReportContexts($reports)
+  {
+    return $reports
+      ->groupBy(fn($report) => $this->buildContextKey($report))
+      ->map(function ($contextReports, $contextKey) {
+        $latestReport = $contextReports->sortByDesc('started_at')->first();
+
+        return [
+          'context_key' => $contextKey,
+          'project' => $this->valueOrDash(data_get($latestReport, 'analysis.project.name')),
+          'keyword' => $this->valueOrDash(optional($latestReport)->keyword),
+          'city' => $this->valueOrDash(optional($latestReport)->city),
+          'domain' => $this->extractDomain(optional($latestReport)->url),
+          'url' => optional($latestReport)->url,
+          'reports_count' => $contextReports->count(),
+          'last_score' => is_numeric(optional($latestReport)->score) ? (float) $latestReport->score : null,
+          'latest_started_at' => optional($latestReport)->started_at,
+          'reports' => $contextReports->values(),
+        ];
+      })
+      ->sortByDesc(function ($group) {
+        $startedAt = $group['latest_started_at'];
+
+        if ($startedAt instanceof \DateTimeInterface) {
+          return $startedAt->getTimestamp();
+        }
+
+        if ($startedAt && strtotime((string) $startedAt) !== false) {
+          return strtotime((string) $startedAt);
+        }
+
+        return PHP_INT_MIN;
+      })
+      ->values();
+  }
+
+  private function buildContextKey(Report $report): string
+  {
+    if (!empty($report->analysis_id)) {
+      return (string) $report->analysis_id;
+    }
+
+    $url = trim((string) ($report->url ?? ''));
+    $keyword = $this->valueOrDash($report->keyword);
+    $city = $this->valueOrDash($report->city);
+
+    return implode('|', [$url !== '' ? $url : '—', $keyword, $city]);
+  }
+
+  private function valueOrDash($value): string
+  {
+    $normalized = trim((string) ($value ?? ''));
+
+    return $normalized !== '' ? $normalized : '—';
+  }
+
+  private function extractDomain($url): string
+  {
+    $rawUrl = trim((string) ($url ?? ''));
+
+    if ($rawUrl === '') {
+      return '—';
+    }
+
+    return parse_url($rawUrl, PHP_URL_HOST) ?: $rawUrl;
   }
 }
 
@@ -404,6 +1554,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Scan;
+use App\Models\Crawl;
 use App\Jobs\RunScan;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
@@ -431,25 +1582,77 @@ class ScanController extends Controller
             'status' => 'queued'
         ]);
 
-        Log::debug('🔍 Empfange Checks vom Frontend:', [
-            'checks' => $request->input('checks')
+        Crawl::create([
+            'id' => $scan->id,
+            'domain' => parse_url($request->url, PHP_URL_HOST) ?: $request->url,
+            'start_url' => $request->url,
+            'status' => 'queued',
+            'pages_scanned' => 0,
+            'pages_total' => 0,
+            'created_at' => now(),
+        ]);
+
+        Log::debug('[SCAN TRACE] controller_start', [
+            'scan_id' => $scan->id,
+            'url' => $request->url,
+            'checks' => $request->input('checks', []),
+        ]);
+
+        Log::debug('[SCAN TRACE] dispatching_scan_job', [
+            'scan_id' => $scan->id,
         ]);
 
         RunScan::dispatch($scan->id, $request->input('checks', []));
 
+        Log::debug('[SCAN TRACE] job_dispatched', [
+            'scan_id' => $scan->id,
+        ]);
 
         return response()->json(['scanId' => $scan->id]);
     }
 
-    public function progress(Scan $scan)
+    public function progress(Request $request, Scan $scan)
     {
-        $path = storage_path("scans/{$scan->id}/progress.json");
+        $scanDirectory = storage_path("scans/{$scan->id}");
+        $path = $scanDirectory.'/progress.json';
+        $eventsPath = $scanDirectory.'/events.jsonl';
+        $eventCursor = (int) $request->query('event_cursor', 0);
+        $events = [];
+
+        if (File::exists($eventsPath)) {
+            $lines = preg_split('/\r?\n/', File::get($eventsPath));
+
+            foreach ($lines as $line) {
+                $line = trim((string) $line);
+
+                if ($line === '') {
+                    continue;
+                }
+
+                $event = json_decode($line, true);
+                if (is_array($event)) {
+                    $events[] = $event;
+                }
+            }
+        }
+
+        $safeCursor = max($eventCursor, 0);
+        $newEvents = $safeCursor >= count($events)
+            ? []
+            : array_slice($events, $safeCursor);
 
         if (!File::exists($path)) {
             return response()->json([
+                'type' => 'crawl_progress',
                 'status' => 'initializing',
+                'stage' => 'queued',
                 'current' => 0,
-                'total' => Config::get('tools.limits.max_urls_per_scan', 10)
+                'total' => Config::get('tools.limits.max_urls_per_scan', 10),
+                'scanned_pages' => 0,
+                'queue_size' => 0,
+                'current_url' => null,
+                'events' => $newEvents,
+                'event_cursor' => count($events),
             ]);
         }
 
@@ -457,9 +1660,16 @@ class ScanController extends Controller
         $json = json_decode($content, true);
 
         return response()->json([
+            'type' => $json['type'] ?? 'crawl_progress',
             'status' => $json['status'] ?? 'running',
+            'stage' => $json['stage'] ?? 'scanning',
             'current' => $json['current'] ?? 0,
-            'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10)
+            'total' => $json['total'] ?? Config::get('tools.limits.max_urls_per_scan', 10),
+            'scanned_pages' => $json['scanned_pages'] ?? ($json['current'] ?? 0),
+            'queue_size' => $json['queue_size'] ?? max(($json['total'] ?? 0) - ($json['current'] ?? 0), 0),
+            'current_url' => $json['current_url'] ?? null,
+            'events' => $newEvents,
+            'event_cursor' => count($events),
         ]);
     }
 
@@ -477,35 +1687,241 @@ class ScanController extends Controller
 
     public function index()
     {
-        $scans = Scan::latest()->get(); // später: ->where('user_id', auth()->id())
+        $scans = Scan::orderByDesc('created_at')->get();
         return view('scans.index', compact('scans'));
     }
+
     public function show(Scan $scan)
     {
-        return view('scans.show', compact('scan'));
+        $scanDirectory = storage_path("scans/{$scan->id}");
+
+        $resultFiles = [];
+        if (File::exists($scanDirectory)) {
+            $resultFiles = collect(File::glob($scanDirectory.'/*.json') ?: [])
+                ->filter(function ($file) {
+                    return preg_match('/\/\d+\.json$/', $file);
+                })
+                ->sortBy(function ($file) {
+                    return (int) basename($file, '.json');
+                })
+                ->values();
+        }
+
+        $results = [];
+        foreach ($resultFiles as $file) {
+            $json = json_decode(File::get($file), true);
+            if ($json) {
+                $results[] = $json;
+            }
+        }
+
+        return view('scans.show', compact('scan', 'results'));
     }
+
     public function abort(Request $request)
     {
-        $scanId = $request->input('scanId');
+        $request->validate([
+            'scanId' => 'required|uuid'
+        ]);
 
-        if (!$scanId) {
-            return response()->json(['error' => 'missing scanId'], 400);
+        $scan = Scan::findOrFail($request->scanId);
+
+        $scan->update([
+            'status' => 'aborted',
+            'finished_at' => now(),
+        ]);
+
+        Crawl::whereKey($scan->id)->update([
+            'status' => 'aborted',
+            'finished_at' => now(),
+        ]);
+
+        $scanDir = storage_path("scans/{$scan->id}");
+        File::put($scanDir.'/progress.json', json_encode([
+            'type' => 'crawl_progress',
+            'status' => 'aborted',
+            'stage' => 'aborted',
+            'current' => (int) $scan->current,
+            'total' => (int) $scan->total,
+            'scanned_pages' => (int) $scan->current,
+            'queue_size' => max((int) $scan->total - (int) $scan->current, 0),
+            'current_url' => null,
+        ]));
+
+        return response()->json(['ok' => true]);
+    }
+}
+
+
+
+----- app/Http/Middleware/RunSystemHealthChecks.php -----
+
+<?php
+
+namespace App\Http\Middleware;
+
+use App\Services\SystemHealthService;
+use Closure;
+use Illuminate\Http\Request;
+
+class RunSystemHealthChecks
+{
+    public function __construct(private readonly SystemHealthService $systemHealthService)
+    {
+    }
+
+    public function handle(Request $request, Closure $next)
+    {
+        if (auth()->check() && !$request->session()->has('system_health_checked')) {
+            $warnings = $this->systemHealthService->collectWarnings();
+
+            if ($warnings !== []) {
+                $request->session()->flash('system_warnings', $warnings);
+            }
+
+            $request->session()->put('system_health_checked', true);
         }
 
-        $path = base_path("node-scanner/storage/app/abort-{$scanId}.flag");
-
-        if (!file_exists(dirname($path))) {
-            mkdir(dirname($path), 0777, true);
-        }
-
-        file_put_contents($path, 'abort');
-
-        return response()->json(['status' => 'abort_requested']);
+        return $next($request);
     }
 }
 
 
 === MODULE: JOB LAYER ===
+
+
+----- app/Jobs/RunCrawl.php -----
+
+<?php
+
+namespace App\Jobs;
+
+use App\Models\Crawl;
+use App\Models\Report;
+use App\Services\Crawler\CrawlerEventConsumer;
+use App\Support\CrawlerRuntime;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
+use Symfony\Component\Process\Process;
+
+class RunCrawl implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public function __construct(private readonly string $crawlId)
+    {
+    }
+
+    public function handle(CrawlerEventConsumer $consumer): void
+    {
+        CrawlerRuntime::assertRedisOrWarn();
+
+        $crawl = Crawl::findOrFail($this->crawlId);
+        $rootUrl = $crawl->entry_url;
+        $useRedis = CrawlerRuntime::useRedis();
+
+        Report::whereKey($this->crawlId)->update([
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+
+        Crawl::whereKey($this->crawlId)->update([
+            'status' => 'running',
+            'started_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('crawl_queue')->updateOrInsert(
+            ['crawl_id' => $crawl->id, 'url' => $rootUrl],
+            ['depth' => 0, 'status' => 'pending', 'created_at' => now()]
+        );
+
+        if ($useRedis) {
+            Redis::lpush('crawl:url_queue', json_encode([
+                'crawl_id' => $crawl->id,
+                'url' => $rootUrl,
+                'depth' => 0,
+            ], JSON_UNESCAPED_SLASHES));
+        }
+
+        $workers = [];
+        $workerCount = $useRedis ? max(1, (int) env('CRAWLER_WORKERS', 2)) : 1;
+        for ($i = 0; $i < $workerCount; $i++) {
+            $process = new Process([
+                'node',
+                base_path('node-scanner/core/crawler-worker.js'),
+            ], base_path(), [
+                'CRAWLER_WORKER_ID' => (string) ($i + 1),
+                'CRAWLER_CONCURRENCY' => (string) env('CRAWLER_CONCURRENCY', 4),
+                'CRAWLER_RUNTIME_MODE' => $useRedis ? 'redis' : 'http',
+                'CRAWLER_HTTP_BASE_URL' => rtrim((string) config('app.url', 'http://127.0.0.1:8000'), '/'),
+                'CRAWLER_ID' => $crawl->id,
+                'CRAWLER_START_URL' => $rootUrl,
+            ]);
+
+            $process->setTimeout(null);
+            $process->start();
+            $workers[] = $process;
+        }
+
+        if ($useRedis) {
+            Redis::lpush('crawl:event_queue', json_encode([
+                'crawl_id' => $crawl->id,
+                'type' => 'crawl_started',
+                'timestamp' => now()->toIso8601String(),
+                'payload' => ['url' => $rootUrl],
+            ], JSON_UNESCAPED_SLASHES));
+        }
+
+        $idleCycles = 0;
+        while ($idleCycles < 30) {
+            $consumed = $useRedis ? $consumer->consume($crawl->id, 1) : false;
+            if ($consumed) {
+                $idleCycles = 0;
+                continue;
+            }
+
+            $idleCycles++;
+            $pending = DB::table('crawl_queue')->where('crawl_id', $crawl->id)->where('status', 'pending')->exists();
+            if (!$pending && $idleCycles > 5) {
+                break;
+            }
+        }
+
+        if ($useRedis) {
+            for ($i = 0; $i < $workerCount; $i++) {
+                Redis::lpush('crawl:url_queue', json_encode([
+                    'type' => 'crawl_stop',
+                    'crawl_id' => $crawl->id,
+                ], JSON_UNESCAPED_SLASHES));
+            }
+
+            Redis::lpush('crawl:event_queue', json_encode([
+                'crawl_id' => $crawl->id,
+                'type' => 'crawl_finished',
+                'timestamp' => now()->toIso8601String(),
+                'payload' => [],
+            ], JSON_UNESCAPED_SLASHES));
+
+            $consumer->consume($crawl->id, 1);
+        }
+
+        foreach ($workers as $worker) {
+            $worker->stop(1);
+        }
+
+        Report::whereKey($this->crawlId)->update([
+            'status' => 'done',
+            'finished_at' => now(),
+        ]);
+    }
+}
+
 
 
 ----- app/Jobs/RunLocalSeo.php -----
@@ -521,6 +1937,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Facades\Log;
+use App\Services\IssueDetectionService;
 
 class RunLocalSeo implements ShouldQueue
 {
@@ -630,6 +2047,9 @@ class RunLocalSeo implements ShouldQueue
             'score' => $data['score'] ?? 0,
             'payload' => $data,
         ]);
+
+        $report->load('results');
+        app(IssueDetectionService::class)->detectAndStoreForReport($report);
     }
 }
 
@@ -697,15 +2117,26 @@ class RunMultiScan implements ShouldQueue
 
 namespace App\Jobs;
 
+use App\Models\Crawl;
+use App\Models\CrawlLink;
+use App\Models\CrawlPage;
+use App\Models\Report;
 use App\Models\Scan;
+use App\Services\IssueDetectionService;
+use App\Services\ReportPersistenceService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Symfony\Component\Process\Process;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Symfony\Component\Process\Process;
 
 class RunScan implements ShouldQueue
 {
@@ -713,1787 +2144,356 @@ class RunScan implements ShouldQueue
 
     public string $scanId;
     public array $checks;
+    public bool $multiScan = false;
 
-    public function __construct(string $scanId, array $checks = [])
+    public function __construct(string $scanId, array $checks = [], bool $multiScan = false)
     {
         $this->scanId = $scanId;
         $this->checks = $checks;
+        $this->multiScan = $multiScan;
     }
 
-    public function handle(): void
+    public function handle(ReportPersistenceService $reportPersistenceService): void
     {
-        Log::info('Multi Scan gestartet', [
+        Log::debug('[SCAN TRACE] job_started', [
             'scan_id' => $this->scanId,
-            'checks' => $this->checks
+            'checks' => $this->checks,
         ]);
 
-        $scan = Scan::findOrFail($this->scanId);
+        Log::info('RunScan gestartet', [
+            'scan_id' => $this->scanId,
+            'checks' => $this->checks,
+        ]);
 
-        $scan->update(['status' => 'running']);
+        $report = Report::find($this->scanId);
+        $scan = $report ? null : Scan::find($this->scanId);
+
+        Log::debug('[SCAN TRACE] model_lookup', [
+            'scan_id' => $this->scanId,
+            'report_found' => (bool) $report,
+            'scan_found' => (bool) $scan,
+        ]);
+
+        if ($report) {
+            Log::debug('[SCAN TRACE] executing_report_scan', [
+                'scan_id' => $this->scanId,
+            ]);
+            $this->runCrawlerReportScan($report, $reportPersistenceService);
+        } elseif ($scan) {
+            Log::debug('[SCAN TRACE] executing_multi_scan', [
+                'scan_id' => $this->scanId,
+            ]);
+            $this->runMultiScan($scan, $reportPersistenceService);
+        } else {
+            Log::critical('[SCAN TRACE] lookup_failed', [
+                'scan_id' => $this->scanId,
+            ]);
+
+            throw new RuntimeException('RunScan could not find Report or Scan for ID: '.$this->scanId);
+        }
+
+        Log::debug('[SCAN TRACE] job_completed', [
+            'scan_id' => $this->scanId,
+        ]);
+    }
+
+    private function runCrawlerReportScan(Report $report, ReportPersistenceService $reportPersistenceService): void
+    {
+        Log::info('[SCAN] Job gestartet', [
+            'scan_id' => $report->id,
+            'url' => $report->url,
+        ]);
+
+        $report->update([
+            'status' => 'running',
+            'started_at' => now(),
+        ]);
+
+        Crawl::whereKey($report->id)->update([
+            'status' => 'running',
+        ]);
 
         $options = [
-            'url' => $scan->url,
-            'checks' => $this->checks,
-            'maxPages' => config('tools.limits.max_urls_per_scan', 6),
+            'scan_id' => $report->id,
+            'url' => $report->url,
+            'checks' => array_values(array_unique(array_merge($this->checks, ['status']))),
+            'max_pages' => config('seo.max_pages', 20),
+            'max_depth' => config('seo.max_depth', 2),
+            'page_timeout' => config('seo.page_timeout', 30),
+            'max_retries' => min((int) config('seo.max_retries', 2), 2),
+            'retry_delay' => config('seo.retry_delay', 10),
+            'max_scan_time' => config('seo.max_scan_time', 300),
+            'concurrency' => (int) env('CRAWLER_CONCURRENCY', 6),
         ];
 
-        $process = new Process([
-            'node',
-            base_path('node-scanner/core/multiScanner.js'),
-            json_encode($options),
-            $this->scanId
+        $command = sprintf(
+            'node %s %s',
+            escapeshellarg(base_path('node-scanner/core/scanner.js')),
+            escapeshellarg(json_encode($options, JSON_UNESCAPED_SLASHES))
+        );
+
+        $process = Process::fromShellCommandline($command, base_path());
+
+        $process->setTimeout(null);
+        Log::debug('[SCAN TRACE] node_process_start', [
+            'scan_id' => $report->id,
+            'target' => 'scanner.js',
+        ]);
+        Log::info('[SCAN] Starting Node Scanner', ['scan_id' => $report->id]);
+        Log::debug('[SCAN TRACE] node_command', [
+            'scan_id' => $report->id,
+            'command' => $process->getCommandLine(),
+        ]);
+        Log::debug('[SCAN] Node command', ['command' => $process->getCommandLine()]);
+        $stdoutBuffer = '';
+        $scanResult = null;
+
+        try {
+            $process->run(function (string $type, string $buffer) use ($report, &$stdoutBuffer, &$scanResult): void {
+                if ($type === Process::ERR) {
+                    Log::error('[NODE STDERR]', [
+                        'scan_id' => $report->id,
+                        'output' => trim($buffer),
+                    ]);
+
+                    return;
+                }
+
+                $stdoutBuffer .= $buffer;
+                $lines = preg_split('/\r?\n/', $stdoutBuffer) ?: [];
+                $stdoutBuffer = array_pop($lines) ?? '';
+
+                foreach ($lines as $line) {
+                    if ($line === '') {
+                        continue;
+                    }
+
+                    $payload = json_decode($line, true);
+                    if (!is_array($payload)) {
+                        Log::debug('[NODE STDOUT]', [
+                            'scan_id' => $report->id,
+                            'output' => trim($line),
+                        ]);
+                        continue;
+                    }
+
+                    if (($payload['type'] ?? null) === 'scan_result' && is_array($payload['result'] ?? null)) {
+                        $scanResult = $payload['result'];
+                        continue;
+                    }
+
+                    $this->persistScanEvent($report->id, $payload);
+                }
+            });
+        } catch (\Throwable $e) {
+            Log::error('[SCAN TRACE] node_process_exception', [
+                'scan_id' => $report->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+        Log::debug('[SCAN TRACE] node_process_finished', [
+            'scan_id' => $report->id,
+            'exit_code' => $process->getExitCode(),
+            'exit_code_text' => $process->getExitCodeText(),
+            'successful' => $process->isSuccessful(),
+        ]);
+        Log::info('[SCAN] Node Scanner finished', ['scan_id' => $report->id]);
+
+        if (!$process->isSuccessful()) {
+            Log::error('Crawler Report Scan fehlgeschlagen', [
+                'report_id' => $report->id,
+                'error' => $process->getErrorOutput(),
+            ]);
+
+            $report->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+
+            Crawl::whereKey($report->id)->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+
+            return;
+        }
+
+        $firstResult = is_array($scanResult) ? $scanResult : null;
+
+        if (!$firstResult) {
+            Log::error('Crawler Report Scan lieferte kein Ergebnis', ['report_id' => $report->id]);
+            $report->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+            Crawl::whereKey($report->id)->update([
+                'status' => 'failed',
+                'finished_at' => now(),
+            ]);
+            return;
+        }
+
+        $directory = "scans/{$report->id}";
+        Storage::makeDirectory($directory);
+        Storage::put("{$directory}/0.json", json_encode($firstResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $pagesCrawled = (int) ($firstResult['pages_crawled'] ?? 1);
+        if ($pagesCrawled < 1) {
+            $pagesCrawled = 1;
+        }
+
+        Storage::put("{$directory}/progress.json", json_encode([
+            'current' => $pagesCrawled,
+            'total' => $pagesCrawled,
+            'status' => 'done',
+        ]));
+
+        CrawlPage::where('crawl_id', $report->id)->delete();
+        CrawlLink::where('crawl_id', $report->id)->delete();
+        $this->resetCrawlIssues($report->id);
+
+        $crawlPages = is_array($firstResult['link_graph_pages'] ?? null) ? $firstResult['link_graph_pages'] : [];
+        $storedPagesByUrl = [];
+        foreach ($crawlPages as $crawlPage) {
+            if (!is_array($crawlPage) || empty($crawlPage['url'])) {
+                continue;
+            }
+
+            $storedPage = CrawlPage::create([
+                'crawl_id' => $report->id,
+                'url' => $crawlPage['url'],
+                'status' => isset($crawlPage['status']) ? (string) $crawlPage['status'] : null,
+                'status_code' => isset($crawlPage['status_code'])
+                    ? (int) $crawlPage['status_code']
+                    : (isset($crawlPage['status']) && is_numeric($crawlPage['status']) ? (int) $crawlPage['status'] : null),
+                'title' => $crawlPage['title'] ?? null,
+                'canonical_url' => $crawlPage['canonical_url'] ?? null,
+                'canonical' => $crawlPage['canonical'] ?? $crawlPage['canonical_url'] ?? null,
+                'meta_description' => $crawlPage['meta_description'] ?? null,
+                'alt_count' => (int) ($crawlPage['alt_count'] ?? $crawlPage['alt_missing_count'] ?? 0),
+                'alt_missing_count' => (int) ($crawlPage['alt_missing_count'] ?? $crawlPage['alt_count'] ?? 0),
+                'h1_count' => (int) ($crawlPage['h1_count'] ?? 0),
+                'heading_count' => (int) ($crawlPage['heading_count'] ?? 0),
+                'image_count' => (int) ($crawlPage['image_count'] ?? 0),
+                'error' => $crawlPage['error'] ?? null,
+                'content_hash' => $crawlPage['content_hash'] ?? $crawlPage['text_hash'] ?? null,
+                'text_hash' => $crawlPage['text_hash'] ?? $crawlPage['content_hash'] ?? null,
+                'internal_links' => (int) ($crawlPage['internal_links'] ?? $crawlPage['internal_links_count'] ?? 0),
+                'external_links' => (int) ($crawlPage['external_links'] ?? $crawlPage['external_links_count'] ?? 0),
+                'internal_links_in' => (int) ($crawlPage['internal_links_in'] ?? 0),
+                'internal_links_out' => (int) ($crawlPage['internal_links_out'] ?? $crawlPage['outgoing_links'] ?? 0),
+                'depth' => (int) ($crawlPage['depth'] ?? 0),
+                'created_at' => now(),
+            ]);
+
+            $storedPagesByUrl[$storedPage->url] = $storedPage;
+        }
+
+        $crawlLinks = is_array($firstResult['crawl_links'] ?? null) ? $firstResult['crawl_links'] : [];
+        $baseHost = parse_url((string) $report->url, PHP_URL_HOST);
+        foreach ($crawlLinks as $crawlLink) {
+            if (!is_array($crawlLink) || empty($crawlLink['source_url']) || empty($crawlLink['target_url'])) {
+                continue;
+            }
+
+            $sourceUrl = (string) $crawlLink['source_url'];
+            $targetUrl = (string) $crawlLink['target_url'];
+            $targetHost = parse_url($targetUrl, PHP_URL_HOST);
+
+            $isInternal = !empty($baseHost)
+                && !empty($targetHost)
+                && Str::lower((string) $targetHost) === Str::lower((string) $baseHost);
+
+            $sourcePageId = $storedPagesByUrl[$sourceUrl]->id ?? null;
+
+            CrawlLink::create([
+                'crawl_id' => $report->id,
+                'source_url' => $sourceUrl,
+                'target_url' => $targetUrl,
+                'link_type' => $isInternal ? 'internal' : 'external',
+                'anchor_text' => $crawlLink['anchor_text'] ?? null,
+                'nofollow' => (bool) ($crawlLink['nofollow'] ?? false),
+                'status_code' => isset($crawlLink['status_code']) ? (int) $crawlLink['status_code'] : null,
+                'redirect_target' => $crawlLink['redirect_target'] ?? null,
+                'redirect_chain_length' => (int) ($crawlLink['redirect_chain_length'] ?? 0),
+                'redirect_chain' => is_array($crawlLink['redirect_chain'] ?? null) ? $crawlLink['redirect_chain'] : null,
+                'created_at' => now(),
+            ]);
+
+            $this->storeCrawlLinkSourcePageId($report->id, $sourceUrl, $targetUrl, $sourcePageId);
+        }
+
+        $this->persistCrawlIssues($report->id);
+
+        Crawl::whereKey($report->id)->update([
+            'pages_scanned' => $pagesCrawled,
+            'pages_total' => $pagesCrawled,
+            'status' => 'done',
+            'finished_at' => now(),
         ]);
 
-        $process->start();
+        $reportPersistenceService->syncFromStorage($report->fresh());
     }
-}
 
-
-=== MODULE: MODEL LAYER ===
-
-
------ app/Models/Report.php -----
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-
-class Report extends Model
-{
-    use HasFactory;
-
-    public $incrementing = false;
-    protected $keyType = 'string';
-
-    protected $fillable = [
-        'id',
-        'user_id',
-        'type',
-        'url',
-        'status',
-        'total_urls',
-        'processed_urls',
-        'score',
-        'started_at',
-        'finished_at'
-    ];
-
-    public function results()
+    private function resetCrawlIssues(string $crawlId): void
     {
-        return $this->hasMany(\App\Models\ReportResult::class, 'report_id');
+        if (!Schema::hasTable('crawl_issues')) {
+            return;
+        }
+
+        DB::table('crawl_issues')->where('crawl_id', $crawlId)->delete();
     }
-    public function user()
+
+    private function storeCrawlLinkSourcePageId(string $crawlId, string $sourceUrl, string $targetUrl, ?int $sourcePageId): void
     {
-        return $this->belongsTo(User::class);
+        if ($sourcePageId === null || !Schema::hasTable('crawl_links') || !Schema::hasColumn('crawl_links', 'source_page_id')) {
+            return;
+        }
+
+        DB::table('crawl_links')
+            ->where('crawl_id', $crawlId)
+            ->where('source_url', $sourceUrl)
+            ->where('target_url', $targetUrl)
+            ->whereNull('source_page_id')
+            ->limit(1)
+            ->update(['source_page_id' => $sourcePageId]);
     }
-}
 
-
-
------ app/Models/ReportResult.php -----
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-
-class ReportResult extends Model
-{
-  protected $fillable = [
-    'report_id',
-    'module',
-    'url',
-    'position',
-    'score',
-    'payload',
-  ];
-
-  protected $casts = [
-    'payload' => 'array',
-  ];
-
-  public function report()
-  {
-    return $this->belongsTo(Report::class);
-  }
-}
-
-
-
------ app/Models/Scan.php -----
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-
-
-class Scan extends Model
-{
-    use HasFactory;
-    public $incrementing = false;
-    protected $keyType = 'string';
-    protected $fillable = ['id', 'url', 'status', 'total', 'current', 'started_at', 'finished_at'];
-
-    public function results()
+    private function persistCrawlIssues(string $crawlId): void
     {
-        return $this->hasMany(ScanResult::class);
-    }
-}
-
-
-
------ app/Models/ScanResult.php -----
-
-<?php
-
-namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-
-
-class ScanResult extends Model
-{
-    use HasFactory;
-    protected $fillable = ['scan_id', 'position', 'url', 'result', 'payload'];
-
-    public function scan()
-    {
-        return $this->belongsTo(Scan::class);
-    }
-
-    protected $casts = [
-        'result' => 'array',
-        'payload' => 'array',
-    ];
-}
-
-
-
------ app/Models/User.php -----
-
-<?php
-
-namespace App\Models;
-
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-
-class User extends Authenticatable
-{
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
-
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
-    protected $fillable = [
-        'name',
-        'email',
-        'password',
-    ];
-
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
-
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
-    }
-}
-
-
-=== MODULE: PROVIDER LAYER ===
-
-
------ app/Providers/AppServiceProvider.php -----
-
-<?php
-
-namespace App\Providers;
-
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Pagination\Paginator;
-
-
-class AppServiceProvider extends ServiceProvider
-{
-    /**
-     * Register any application services.
-     */
-    public function register(): void
-    {
-        //
-    }
-
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
-    {
-        Paginator::useTailwind();
-    }
-}
-
-
-=== MODULE: SERVICE LAYER ===
-
-
------ app/Services/ReportPersistenceService.php -----
-
-<?php
-
-namespace App\Services;
-
-use App\Models\Report;
-use Illuminate\Support\Facades\Storage;
-
-class ReportPersistenceService
-{
-  public function syncFromStorage(Report $report): void
-  {
-    $path = "scans/{$report->id}/0.json";
-
-    if (!Storage::exists($path)) {
-      return;
-    }
-
-    $content = json_decode(Storage::get($path), true);
-
-    if (!isset($content['score'])) {
-      return;
-    }
-
-    $report->update([
-      'score' => $content['score']['score'] ?? 0,
-      'status' => 'done',
-      'finished_at' => now(),
-    ]);
-  }
-}
-
-
-
------ app/Services/Scoring/PriorityFactory.php -----
-
-<?php
-
-namespace App\Services\Scoring;
-
-class PriorityFactory
-{
-  public static function make(
-    string $code,
-    string $severity,
-    string $category,
-    string $message
-  ): array {
-    return [
-      'code' => $code,
-      'severity' => $severity,
-      'category' => $category,
-      'message' => $message
-    ];
-  }
-}
-
-
-=== MODULE: ROUTES ===
-
-
------ routes/console.php -----
-
-<?php
-
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
-
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
-
-
-
------ routes/web.php -----
-
-<?php
-
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\CrawlerController;
-use App\Http\Controllers\LocalSeoController;
-use App\Http\Controllers\ReportController;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\LogController;
-use App\Http\Controllers\QueueController;
-use App\Http\Controllers\ScanController;
-
-Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
-
-/*
-|--------------------------------------------------------------------------
-| CRAWLER REPORT
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/crawler', [CrawlerController::class, 'form'])->name('crawler.form');
-Route::post('/crawler', [CrawlerController::class, 'start'])->name('crawler.start');
-
-/*
-|--------------------------------------------------------------------------
-| LOCAL SEO REPORT
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/local-seo', [LocalSeoController::class, 'form'])->name('localseo.form');
-Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.start');
-
-/*
-|--------------------------------------------------------------------------
-| MULTI SCAN / LIVE SCANNER
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/scan', [ScanController::class, 'form'])->name('scan.form');
-Route::post('/scan', [ScanController::class, 'start'])->name('scan.start');
-
-Route::get('/scan/{scan}/progress', [ScanController::class, 'progress']);
-Route::get('/scan/{scan}/result/{index}', [ScanController::class, 'result']);
-
-Route::post('/multiscan/abort', [ScanController::class, 'abort']);
-
-Route::get('/scans', [ScanController::class, 'index'])->name('scans.index');
-Route::get('/scans/{scan}', [ScanController::class, 'show'])->name('scans.show');
-
-/*
-|--------------------------------------------------------------------------
-| REPORT OVERVIEW
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-Route::get('/reports/archive', [ReportController::class, 'archive'])->name('reports.archive');
-Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
-
-Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
-  return response()->json([
-    'status' => $report->status,
-    'score' => $report->score,
-    'started_at' => $report->started_at,
-    'finished_at' => $report->finished_at,
-  ]);
-});
-
-/*
-|--------------------------------------------------------------------------
-| LOGS & DEBUG
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
-Route::get('/logs/raw', [LogController::class, 'raw'])->name('logs.raw');
-Route::view('/logs/live', 'logs.live')->name('logs.live');
-
-Route::get('/queues', [QueueController::class, 'index'])->name('queues.index');
-
-
-=== MODULE: VIEWS (BLADE) ===
-
-
------ resources/views/crawler/form.blade.php -----
-
-/crawler/form.blade.php
-
-
-
------ resources/views/dashboard/index.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-
-<div class="max-w-6xl mx-auto">
-
-  <h1 class="text-2xl font-semibold mb-8">
-    Dashboard
-  </h1>
-
-  <div class="grid grid-cols-2 gap-6 mb-10">
-
-    @foreach(config('reports.types') as $type => $report)
-
-    <a href="{{ route($report['route']) }}"
-      class="bg-white p-6 rounded shadow-sm hover:shadow-md transition border border-gray-100">
-
-      <h2 class="text-lg font-semibold mb-2">
-        {{ $report['label'] }}
-      </h2>
-
-      <p class="text-sm text-gray-600">
-        Neuen Report starten
-      </p>
-
-    </a>
-
-    @endforeach
-
-  </div>
-
-  <div class="flex justify-between items-center mb-4">
-    <h2 class="text-lg font-semibold">
-      Letzte Reports
-    </h2>
-
-    <a href="{{ route('reports.index') }}"
-      class="text-sm text-blue-600 hover:underline">
-      Alle Reports anzeigen
-    </a>
-  </div>
-
-  <div class="bg-white rounded shadow-sm divide-y">
-
-    @forelse($latestReports as $report)
-
-    <a href="{{ route('reports.show', $report) }}"
-      class="flex justify-between items-center p-4 hover:bg-gray-50 transition">
-
-      <div>
-        <div class="text-sm font-medium">
-          {{ strtoupper($report->type) }} – {{ $report->url }}
-        </div>
-
-        <div class="text-xs text-gray-500">
-          {{ $report->created_at->format('d.m.Y H:i') }}
-        </div>
-      </div>
-
-      <div class="flex items-center gap-6">
-
-        <div class="text-sm font-semibold">
-          {{ $report->score ?? '-' }}
-        </div>
-
-        @php
-        $statusColors = [
-        'queued' => 'bg-gray-100 text-gray-600',
-        'running' => 'bg-yellow-100 text-yellow-700',
-        'done' => 'bg-green-100 text-green-700',
-        'aborted' => 'bg-red-100 text-red-700',
-        ];
-        @endphp
-
-        <span class="px-2 py-1 text-xs rounded {{ $statusColors[$report->status] ?? 'bg-gray-100 text-gray-600' }}">
-          {{ $report->status }}
-        </span>
-
-      </div>
-
-    </a>
-
-    @empty
-
-    <div class="p-6 text-sm text-gray-500">
-      Noch keine Reports vorhanden.
-    </div>
-
-    @endforelse
-
-  </div>
-
-</div>
-
-@endsection
-
-
-
------ resources/views/layouts/app.blade.php -----
-
-<!DOCTYPE html>
-<html lang="de">
-
-<head>
-  <meta charset="UTF-8">
-  <title>{{ $title ?? 'Orange Tools' }}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  @vite(['resources/css/app.css', 'resources/js/app.js'])
-  <meta name="csrf-token" content="{{ csrf_token() }}">
-  <script src="//unpkg.com/alpinejs" defer></script>
-</head>
-
-<body
-  class="bg-gray-50 text-gray-900 antialiased"
-  data-page="{{ $page ?? '' }}">
-
-  <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex h-16 items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <a href="/">
-            <img src="{{ asset('images/os-logo.png') }}" alt="Logo" class="h-10 w-auto">
-            <!-- <span class="text-xl font-semibold text-gray-800">Orange Tools</span> -->
-          </a>
-        </div>
-
-        <nav class="flex space-x-6 text-sm font-medium">
-
-          @foreach(config('reports.types') as $type => $report)
-          <a href="{{ route($report['route']) }}"
-            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            {{ $report['label'] }}
-          </a>
-          @endforeach
-
-          <a href="{{ route('reports.index') }}"
-            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            Reports
-          </a>
-
-          <a href="{{ route('logs.index') }}"
-            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            Logs
-          </a>
-
-          <a href="{{ route('logs.live') }}"
-            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('logs.live') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            Live Logs
-          </a>
-
-          <a href="{{ route('queues.index') }}"
-            class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('queues.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            Queue Monitor
-          </a>
-
-        </nav>
-
-      </div>
-    </div>
-  </header>
-
-  <main class="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-    @yield('content')
-  </main>
-
-  @yield('scripts')
-
-</body>
-
-</html>
-
-
-
------ resources/views/localseo/form.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-
-@php($page = 'local-seo')
-
-<div class="max-w-3xl mx-auto bg-white shadow-sm rounded p-6">
-
-  <h1 class="text-xl font-semibold mb-6">
-    Local SEO Analyse
-  </h1>
-
-  <form id="local-seo-form" class="space-y-4">
-
-    <input
-      type="url"
-      name="url"
-      required
-      placeholder="https://example.com"
-      value="https://glas-service-muenchen.de"
-      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
-
-    <input
-      type="text"
-      name="keyword"
-      required
-      placeholder="Keyword (z.B. Glaserei)"
-      value="Glaserei"
-      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
-
-    <input
-      type="text"
-      name="city"
-      required
-      placeholder="Stadt (z.B. München)"
-      value="München"
-      class="w-full border border-gray-300 px-4 py-2 rounded focus:ring-2 focus:ring-orange-500">
-
-    <button
-      type="submit"
-      class="bg-orange-600 text-white px-6 py-2 rounded hover:bg-orange-700 transition">
-      Analyse starten
-    </button>
-
-  </form>
-
-</div>
-
-@endsection
-
-
-
------ resources/views/logs/index.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<div class="space-y-6">
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-gray-900">System Logs</h1>
-        <p class="text-sm text-gray-500 mt-1">Recent application log events with visual severity indicators.</p>
-      </div>
-      <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 w-fit">
-        {{ count($entries) }} entries
-      </span>
-    </div>
-
-    <div class="mt-6 overflow-x-auto rounded-xl border border-gray-200">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-          <tr>
-            <th class="py-3 px-4">Timestamp</th>
-            <th class="py-3 px-4">Environment</th>
-            <th class="py-3 px-4">Level</th>
-            <th class="py-3 px-4">Message</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          @forelse($entries as $entry)
-          <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-orange-50 transition-colors">
-            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['timestamp'] }}</td>
-            <td class="py-3 px-4 whitespace-nowrap text-gray-700">{{ $entry['environment'] }}</td>
-            <td class="py-3 px-4">
-              @php($level = strtoupper($entry['level']))
-              <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold
-                {{ $level === 'ERROR' ? 'bg-red-100 text-red-700 ring-1 ring-red-200' : '' }}
-                {{ $level === 'WARNING' ? 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200' : '' }}
-                {{ $level === 'INFO' ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' : '' }}
-                {{ $level === 'DEBUG' ? 'bg-gray-200 text-gray-700 ring-1 ring-gray-300' : '' }}
-                {{ !in_array($level, ['ERROR', 'WARNING', 'INFO', 'DEBUG']) ? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' : '' }}">
-                {{ $entry['level'] }}
-              </span>
-            </td>
-            <td class="py-3 px-4">
-              <pre class="font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ $entry['message'] }}</pre>
-            </td>
-          </tr>
-          @empty
-          <tr>
-            <td colspan="4" class="py-8 px-4 text-center text-gray-500">No log entries found.</td>
-          </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
-@endsection
-
-
-
------ resources/views/logs/live.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<div class="space-y-6">
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-gray-900">Live Logs</h1>
-        <p class="text-sm text-gray-500 mt-1">Streaming view of incoming logs in a terminal-style console.</p>
-      </div>
-      <span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700 w-fit">
-        Auto refresh: 2s
-      </span>
-    </div>
-
-    <div class="mt-6 rounded-xl border border-emerald-900/40 bg-[#050b12] p-4 shadow-inner">
-      <div id="live-log-console" class="h-[560px] overflow-y-auto rounded-lg bg-black/40 p-4 font-mono text-sm leading-relaxed text-emerald-300 whitespace-pre-wrap break-words"></div>
-    </div>
-  </section>
-</div>
-@endsection
-
-@section('scripts')
-<script>
-  const liveLogConsole = document.getElementById('live-log-console');
-
-  async function loadLogs() {
-    try {
-      const response = await fetch('/logs/raw');
-      const payload = await response.json();
-      const lines = payload.lines || [];
-
-      liveLogConsole.textContent = lines.join('');
-      liveLogConsole.scrollTop = liveLogConsole.scrollHeight;
-    } catch (error) {
-      liveLogConsole.textContent = 'Unable to load logs.';
-    }
-  }
-
-  loadLogs();
-  setInterval(loadLogs, 2000);
-</script>
-@endsection
-
-
-
------ resources/views/multiscan/live.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<form id="live-scan-form" class="mb-6 flex gap-2 items-center">
-  <input type="url" name="url" required value="https://orange-services.de" placeholder="https://example.com"
-    class="flex-1 border border-gray-300 px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-orange-500">
-  <button type="submit"
-    class="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 transition flex items-center gap-2">
-    <span>Scan starten</span>
-    <span id="scan-spinner" class="hidden w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-  </button>
-</form>
-
-<div class="mb-4 flex flex-wrap items-center gap-4">
-  <label><input type="checkbox" class="check-option" value="alt"> ALT-Check</label>
-  <label><input type="checkbox" class="check-option" value="heading"> Überschriften</label>
-  <label><input type="checkbox" class="check-option" value="status"> HTTP-Status</label>
-</div>
-
-<div id="abort-section" class="mb-4 hidden">
-  <button id="abort-button" class="text-sm px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
-    Scan abbrechen
-  </button>
-</div>
-
-<div id="scan-progress" class="mb-4 text-sm text-gray-700">
-  <span id="progress-text">Noch kein Scan gestartet.</span>
-</div>
-
-<div class="overflow-x-auto bg-white shadow-sm rounded">
-  <table class="min-w-full text-sm border-collapse" id="result-table">
-    <thead class="bg-gray-100 text-left">
-      <tr>
-        <th class="p-2 border-b">#</th>
-        <th class="p-2 border-b">URL</th>
-        <th class="p-2 border-b">Status</th>
-        <th class="p-2 border-b">ALT</th>
-        <th class="p-2 border-b">Headings</th>
-        <th class="p-2 border-b">Fehler</th>
-      </tr>
-    </thead>
-    <tbody id="result-body"></tbody>
-  </table>
-</div>
-@endsection
-
-@vite(['resources/js/liveScan.js'])
-
-
-
------ resources/views/multiscan/result.blade.php -----
-
-@extends('layouts.app')
-
-@section('title', 'Scan-Ergebnisse')
-
-@section('content')
-<h1 class="text-2xl font-bold mb-4">Ergebnisse für: {{ $url }}</h1>
-
-<table class="w-full text-sm border border-gray-300">
-  <thead class="bg-gray-100">
-    <tr>
-      <th class="text-left p-2 border-b">URL</th>
-      <th class="text-left p-2 border-b">Status</th>
-      <th class="text-left p-2 border-b">Titel</th>
-      <th class="text-left p-2 border-b">H1</th>
-      <th class="text-left p-2 border-b">ALT fehlt</th>
-      <th class="text-left p-2 border-b">ALT leer</th>
-    </tr>
-  </thead>
-  <tbody>
-    @foreach ($results as $result)
-    <tr>
-      <td class="p-2 border-b">{{ $result['url'] }}</td>
-      <td class="p-2 border-b">{{ $result['status']['code'] ?? '–' }}</td>
-      <td class="p-2 border-b">{{ $result['title'] ?? '–' }}</td>
-      <td class="p-2 border-b">{{ $result['headingCheck']['count']['h1'] ?? 0 }}</td>
-      <td class="p-2 border-b">{{ $result['altCheck']['altMissing'] ?? 0 }}</td>
-      <td class="p-2 border-b">{{ $result['altCheck']['altEmpty'] ?? 0 }}</td>
-    </tr>
-    @endforeach
-  </tbody>
-</table>
-@endsection
-
-
-
------ resources/views/queues/index.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<div class="space-y-6">
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 sm:p-8">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold text-gray-900">Queue Monitor</h1>
-        <p class="text-sm text-gray-500 mt-1">Operational overview of queued and failed background jobs.</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">
-          Queued: {{ count($jobs) }}
-        </span>
-        <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
-          Failed: {{ count($failedJobs) }}
-        </span>
-      </div>
-    </div>
-  </section>
-
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-gray-900">Queued Jobs</h2>
-      <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700">Pending</span>
-    </div>
-
-    <div class="overflow-x-auto rounded-xl border border-gray-200">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-          <tr>
-            <th class="py-3 px-4">ID</th>
-            <th class="py-3 px-4">Queue</th>
-            <th class="py-3 px-4">Attempts</th>
-            <th class="py-3 px-4">Status</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          @forelse($jobs as $job)
-          <tr class="odd:bg-white even:bg-gray-50 hover:bg-blue-50 transition-colors">
-            <td class="py-3 px-4 text-gray-800">{{ $job->id }}</td>
-            <td class="py-3 px-4 text-gray-700">{{ $job->queue }}</td>
-            <td class="py-3 px-4 text-gray-700">{{ $job->attempts }}</td>
-            <td class="py-3 px-4">
-              <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">Queued</span>
-            </td>
-          </tr>
-          @empty
-          <tr>
-            <td colspan="4" class="py-8 px-4 text-center text-gray-500">No queued jobs found.</td>
-          </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-gray-900">Failed Jobs</h2>
-      <span class="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">Failed</span>
-    </div>
-
-    <div class="overflow-x-auto rounded-xl border border-gray-200">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-100 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-          <tr>
-            <th class="py-3 px-4">ID</th>
-            <th class="py-3 px-4">Status</th>
-            <th class="py-3 px-4">Exception</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200">
-          @forelse($failedJobs as $failedJob)
-          <tr class="align-top odd:bg-white even:bg-gray-50 hover:bg-red-50 transition-colors">
-            <td class="py-3 px-4 text-gray-800">{{ $failedJob->id }}</td>
-            <td class="py-3 px-4">
-              <span class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700 ring-1 ring-red-200">Failed</span>
-            </td>
-            <td class="py-3 px-4">
-              <pre class="font-mono text-xs leading-relaxed text-gray-800 whitespace-pre-wrap break-words">{{ $failedJob->exception }}</pre>
-            </td>
-          </tr>
-          @empty
-          <tr>
-            <td colspan="3" class="py-8 px-4 text-center text-gray-500">No failed jobs found.</td>
-          </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
-@endsection
-
-
-
------ resources/views/reports/archive.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-
-<div class="max-w-6xl mx-auto bg-white shadow-sm rounded p-8 space-y-8">
-
-  <div class="flex justify-between items-center">
-    <h1 class="text-2xl font-semibold">Report Archiv</h1>
-    <a href="{{ route('dashboard') }}" class="text-sm text-blue-600 hover:underline">
-      Zurück zum Dashboard
-    </a>
-  </div>
-
-  @if($reports->isEmpty())
-  <div class="text-gray-500 text-sm">
-    Noch keine Reports vorhanden.
-  </div>
-  @else
-
-  <div class="overflow-x-auto">
-    <table class="min-w-full text-sm border">
-
-      <thead class="bg-gray-100 text-left">
-        <tr>
-          <th class="px-4 py-3 border-b">Datum</th>
-          <th class="px-4 py-3 border-b">URL</th>
-          <th class="px-4 py-3 border-b">Typ</th>
-          <th class="px-4 py-3 border-b">Status</th>
-          <th class="px-4 py-3 border-b">Score</th>
-          <th class="px-4 py-3 border-b text-right">Aktion</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        @foreach($reports as $report)
-
-        <tr class="hover:bg-gray-50">
-          <td class="px-4 py-3 border-b">
-            {{ $report->created_at->format('d.m.Y H:i') }}
-          </td>
-
-          <td class="px-4 py-3 border-b">
-            <div class="truncate max-w-xs">
-              {{ $report->url }}
-            </div>
-          </td>
-
-          <td class="px-4 py-3 border-b">
-            {{ ucfirst($report->type) }}
-          </td>
-
-          <td class="px-4 py-3 border-b">
-            @if($report->status === 'done')
-            <span class="text-green-600 font-semibold">Fertig</span>
-            @elseif($report->status === 'running')
-            <span class="text-yellow-600 font-semibold">Läuft</span>
-            @elseif($report->status === 'queued')
-            <span class="text-gray-600 font-semibold">In Warteschlange</span>
-            @else
-            <span class="text-red-600 font-semibold">Fehler</span>
-            @endif
-          </td>
-
-          <td class="px-4 py-3 border-b">
-            @if($report->score !== null)
-            <span class="font-semibold">
-              {{ $report->score }}
-            </span>
-            @else
-            –
-            @endif
-          </td>
-
-          <td class="px-4 py-3 border-b text-right">
-            <a
-              href="{{ route('reports.show', $report->id) }}"
-              class="text-blue-600 hover:underline">
-              Anzeigen
-            </a>
-          </td>
-        </tr>
-
-        @endforeach
-      </tbody>
-
-    </table>
-  </div>
-
-  @endif
-
-</div>
-
-@endsection
-
-
-
------ resources/views/reports/index.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-
-<div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-6">
-
-  <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-semibold">Letzte Reports</h1>
-    <a href="{{ route('reports.archive') }}" class="text-sm text-blue-600 hover:underline">
-      Gesamte Historie anzeigen
-    </a>
-  </div>
-
-  <div class="space-y-4">
-    @forelse($reports as $report)
-    <a href="{{ route('reports.show', $report) }}"
-      class="block border rounded p-4 hover:bg-gray-50 transition">
-
-      <div class="flex justify-between items-center">
-        <div>
-          <div class="font-medium">{{ $report->url }}</div>
-          <div class="text-xs text-gray-500">
-            {{ $report->created_at->format('d.m.Y H:i') }}
-          </div>
-        </div>
-
-        <div class="text-right">
-          <div class="text-sm font-semibold">
-            {{ $report->score ?? '-' }}
-          </div>
-          <div class="text-xs text-gray-500">
-            {{ $report->status }}
-          </div>
-        </div>
-      </div>
-
-    </a>
-    @empty
-    <div class="text-gray-500">Keine Reports vorhanden.</div>
-    @endforelse
-  </div>
-
-</div>
-
-@endsection
-
-
-
------ resources/views/reports/show.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-
-@php
-$result = $report->results->first();
-$data = $result?->payload ?? [];
-$modules = config('seo_modules');
-@endphp
-
-<div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
-
-  <div>
-    <h1 class="text-2xl font-semibold mb-4">Local SEO Analyse</h1>
-
-    <div class="space-y-1 text-sm">
-      <div><strong>URL:</strong> {{ $report->url }}</div>
-      <div><strong>Status:</strong> {{ $report->status }}</div>
-      <div><strong>Score:</strong> {{ $report->score }}</div>
-      <div><strong>Rating:</strong> {{ $data['rating']['label'] ?? '-' }}</div>
-    </div>
-  </div>
-
-  @foreach(($modules['dimensions'] ?? []) as $dimensionKey => $dimension)
-
-  <div>
-    <h2 class="text-xl font-semibold mb-2">
-      {{ $dimension['label'] ?? '' }}
-    </h2>
-
-    <p class="text-sm text-gray-600 mb-6">
-      {{ $dimension['description'] ?? '' }}
-    </p>
-
-    <div class="space-y-6">
-
-      @foreach(($data['breakdown'] ?? []) as $key => $item)
-
-      @php
-      $config = $modules[$key] ?? null;
-      @endphp
-
-      @if($config && ($config['dimension'] ?? null) === $dimensionKey)
-
-      @php
-      $percentage = ($item['max'] ?? 0) > 0
-      ? round((($item['score'] ?? 0) / $item['max']) * 100)
-      : 0;
-
-      $barColor = $percentage >= 80
-      ? 'bg-green-500'
-      : ($percentage >= 50 ? 'bg-yellow-500' : 'bg-red-500');
-      @endphp
-
-      <div x-data="{ open: false }" class="border rounded overflow-hidden">
-
-        <button
-          type="button"
-          @click="open = !open"
-          class="w-full flex justify-between items-center p-5 text-left hover:bg-gray-50 transition">
-
-          <div>
-            <div class="font-semibold text-lg">
-              {{ $config['label'] ?? '' }}
-            </div>
-            <div class="text-sm text-gray-600">
-              {{ $config['description'] ?? '' }}
-            </div>
-          </div>
-
-          <div class="flex items-center gap-5">
-            <div class="text-sm font-semibold">
-              {{ $item['score'] ?? 0 }} / {{ $item['max'] ?? 0 }}
-            </div>
-
-            <span
-              class="text-xl transition-transform duration-200"
-              :class="{ 'rotate-180': open }">
-              ▼
-            </span>
-          </div>
-        </button>
-
-        <div class="px-5 pb-4">
-          <div class="w-full bg-gray-200 rounded h-2">
-            <div class="h-2 rounded {{ $barColor }}"
-              style="width: {{ $percentage }}%">
-            </div>
-          </div>
-        </div>
-
-        <div
-          x-show="open"
-          x-transition
-          class="px-5 pb-6 space-y-6 text-sm border-t bg-gray-50">
-
-          <div>
-            <div class="font-medium mb-2">So wird bewertet:</div>
-
-            <ul class="space-y-2">
-
-              @foreach(($config['how_scoring_works'] ?? []) as $rule => $text)
-
-              @php
-              $value = $item['checks'][$rule] ?? null;
-              @endphp
-
-              <li class="flex justify-between items-center">
-
-                <span>{{ $text }}</span>
-
-                @if($value === true)
-                <span class="text-green-600 font-semibold">✔</span>
-                @elseif($value === false)
-                <span class="text-red-600 font-semibold">✘</span>
-                @else
-                <span class="text-gray-400">–</span>
-                @endif
-
-              </li>
-
-              @endforeach
-
-            </ul>
-          </div>
-
-          @if(!empty($item['missing']))
-          <div class="bg-red-50 border-l-4 border-red-500 p-4">
-            <div class="font-medium mb-2">Verbesserung notwendig:</div>
-            <ul class="list-disc ml-5">
-              @foreach($item['missing'] as $missing)
-              <li>{{ $missing }}</li>
-              @endforeach
-            </ul>
-          </div>
-          @endif
-
-          <div class="bg-blue-50 border-l-4 border-blue-500 p-4">
-            <div class="font-medium">Was ist zu tun:</div>
-            <div>{{ $config['how_to_fix'] ?? '' }}</div>
-          </div>
-
-        </div>
-
-      </div>
-
-      @endif
-
-      @endforeach
-
-    </div>
-  </div>
-
-  @endforeach
-
-  <div>
-    <h2 class="text-xl font-semibold mb-4">Handlungsempfehlungen</h2>
-
-    <div class="space-y-4">
-
-      @foreach(($data['priorities'] ?? []) as $priority)
-
-      @php
-      $severityColors = [
-      'high' => 'bg-red-100 border-red-500',
-      'medium' => 'bg-yellow-100 border-yellow-500',
-      'low' => 'bg-green-100 border-green-500',
-      ];
-      @endphp
-
-      <div class="border-l-4 p-4 {{ $severityColors[$priority['severity']] ?? 'bg-gray-100 border-gray-400' }}">
-
-        <div class="font-semibold">
-          {{ $priority['message'] ?? '' }}
-        </div>
-
-        <div class="text-sm text-gray-600">
-          Kategorie: {{ $priority['category'] ?? '-' }} |
-          Priorität: {{ strtoupper($priority['severity'] ?? '-') }}
-        </div>
-
-      </div>
-
-      @endforeach
-
-    </div>
-
-  </div>
-
-</div>
-
-@endsection
-
-
-
------ resources/views/scans/index.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<div class="max-w-5xl mx-auto px-4 py-6">
-  <h1 class="text-2xl font-semibold mb-6">Meine Scans</h1>
-
-  @if ($scans->isEmpty())
-  <p class="text-gray-600">Noch keine Scans vorhanden.</p>
-  @else
-  <div class="overflow-x-auto bg-white shadow rounded">
-    <table class="min-w-full table-auto text-sm text-left border-collapse">
-      <thead class="bg-gray-100 border-b">
-        <tr>
-          <th class="px-4 py-2">#</th>
-          <th class="px-4 py-2">Start-URL</th>
-          <th class="px-4 py-2">Status</th>
-          <th class="px-4 py-2">Ergebnisse</th>
-          <th class="px-4 py-2">Erstellt</th>
-          <th class="px-4 py-2">Aktion</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y text-gray-800">
-        @foreach ($scans as $scan)
-        <tr>
-          <td class="px-4 py-2">{{ $loop->iteration }}</td>
-          <td class="px-4 py-2 break-all">{{ $scan->url }}</td>
-          <td class="px-4 py-2">
-            <span class="inline-block px-2 py-1 rounded text-white text-xs
-                                    @if ($scan->status === 'done') bg-green-500
-                                    @elseif ($scan->status === 'queued') bg-gray-400
-                                    @elseif ($scan->status === 'running') bg-blue-500
-                                    @else bg-red-500 @endif">
-              {{ $scan->status }}
-            </span>
-          </td>
-          <td class="px-4 py-2 text-center">{{ $scan->results()->count() }}</td>
-          <td class="px-4 py-2 text-gray-500">{{ $scan->created_at->format('d.m.Y H:i') }}</td>
-          <td class="px-4 py-2">
-            <a href="{{ route('scans.show', $scan) }}" class="text-orange-600 hover:underline text-sm">
-              Anzeigen
-            </a>
-          </td>
-        </tr>
-        @endforeach
-      </tbody>
-    </table>
-  </div>
-  @endif
-</div>
-@endsection
-
-
-
------ resources/views/scans/show.blade.php -----
-
-@extends('layouts.app')
-
-@section('content')
-<div class="max-w-5xl mx-auto px-4 py-6">
-  <h1 class="text-2xl font-semibold mb-6">Scan-Details</h1>
-
-  <div class="mb-6 text-sm text-gray-700">
-    <div><strong>Start-URL:</strong> <a href="{{ $scan->url }}" class="text-orange-600 underline" target="_blank">{{ $scan->url }}</a></div>
-    <div><strong>Status:</strong> <span class="font-medium">{{ $scan->status }}</span></div>
-    <div><strong>Erstellt:</strong> {{ $scan->created_at->format('d.m.Y H:i') }}</div>
-    <div><strong>Seiten gefunden:</strong> {{ $scan->results()->count() }}</div>
-  </div>
-
-  @if ($scan->results->isEmpty())
-  <p class="text-gray-500">Für diesen Scan sind noch keine Ergebnisse vorhanden.</p>
-  @else
-  <div class="overflow-x-auto bg-white shadow rounded">
-    <table class="min-w-full table-auto text-sm text-left border-collapse">
-      <thead class="bg-gray-100 border-b">
-        <tr>
-          <th class="px-4 py-2">#</th>
-          <th class="px-4 py-2">URL</th>
-          <th class="px-4 py-2">Status</th>
-          <th class="px-4 py-2">ALT</th>
-          <th class="px-4 py-2">Headings</th>
-          <th class="px-4 py-2">Fehler</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y">
-        @foreach ($scan->results as $result)
-        @php $data = $result->payload; @endphp
-        <tr>
-          <td class="px-4 py-2">{{ $loop->iteration }}</td>
-          <td class="px-4 py-2 break-all">
-            <a href="{{ $data['url'] ?? '#' }}" class="text-orange-600 hover:underline" target="_blank">
-              {{ $data['url'] ?? '–' }}
-            </a>
-          </td>
-          <td class="px-4 py-2">{{ $data['statusCheck']['status'] ?? '–' }}</td>
-          <td class="px-4 py-2">{{ $data['altCheck']['altMissing'] ?? 0 }} Fehler</td>
-          <td class="px-4 py-2">
-            {{ count($data['headingCheck']['list'] ?? []) }} Überschriften
-          </td>
-          <td class="px-4 py-2 text-red-600">
-            {{ implode(', ', $data['headingCheck']['errors'] ?? []) ?: '–' }}
-          </td>
-        </tr>
-        @endforeach
-      </tbody>
-    </table>
-  </div>
-  @endif
-</div>
-@endsection
-
-
-
------ resources/views/welcome.blade.php -----
-
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-
-        <title>Laravel</title>
-
-        <!-- Fonts -->
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
-
-        <!-- Styles / Scripts -->
-        @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
-            @vite(['resources/css/app.css', 'resources/js/app.js'])
-        @else
-            <style>
-                /*! tailwindcss v4.0.7 | MIT License | https://tailwindcss.com */@layer theme{:root,:host{--font-sans:'Instrument Sans',ui-sans-serif,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";--font-serif:ui-serif,Georgia,Cambria,"Times New Roman",Times,serif;--font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;--color-red-50:oklch(.971 .013 17.38);--color-red-100:oklch(.936 .032 17.717);--color-red-200:oklch(.885 .062 18.334);--color-red-300:oklch(.808 .114 19.571);--color-red-400:oklch(.704 .191 22.216);--color-red-500:oklch(.637 .237 25.331);--color-red-600:oklch(.577 .245 27.325);--color-red-700:oklch(.505 .213 27.518);--color-red-800:oklch(.444 .177 26.899);--color-red-900:oklch(.396 .141 25.723);--color-red-950:oklch(.258 .092 26.042);--color-orange-50:oklch(.98 .016 73.684);--color-orange-100:oklch(.954 .038 75.164);--color-orange-200:oklch(.901 .076 70.697);--color-orange-300:oklch(.837 .128 66.29);--color-orange-400:oklch(.75 .183 55.934);--color-orange-500:oklch(.705 .213 47.604);--color-orange-600:oklch(.646 .222 41.116);--color-orange-700:oklch(.553 .195 38.402);--color-orange-800:oklch(.47 .157 37.304);--color-orange-900:oklch(.408 .123 38.172);--color-orange-950:oklch(.266 .079 36.259);--color-amber-50:oklch(.987 .022 95.277);--color-amber-100:oklch(.962 .059 95.617);--color-amber-200:oklch(.924 .12 95.746);--color-amber-300:oklch(.879 .169 91.605);--color-amber-400:oklch(.828 .189 84.429);--color-amber-500:oklch(.769 .188 70.08);--color-amber-600:oklch(.666 .179 58.318);--color-amber-700:oklch(.555 .163 48.998);--color-amber-800:oklch(.473 .137 46.201);--color-amber-900:oklch(.414 .112 45.904);--color-amber-950:oklch(.279 .077 45.635);--color-yellow-50:oklch(.987 .026 102.212);--color-yellow-100:oklch(.973 .071 103.193);--color-yellow-200:oklch(.945 .129 101.54);--color-yellow-300:oklch(.905 .182 98.111);--color-yellow-400:oklch(.852 .199 91.936);--color-yellow-500:oklch(.795 .184 86.047);--color-yellow-600:oklch(.681 .162 75.834);--color-yellow-700:oklch(.554 .135 66.442);--color-yellow-800:oklch(.476 .114 61.907);--color-yellow-900:oklch(.421 .095 57.708);--color-yellow-950:oklch(.286 .066 53.813);--color-lime-50:oklch(.986 .031 120.757);--color-lime-100:oklch(.967 .067 122.328);--color-lime-200:oklch(.938 .127 124.321);--color-lime-300:oklch(.897 .196 126.665);--color-lime-400:oklch(.841 .238 128.85);--color-lime-500:oklch(.768 .233 130.85);--color-lime-600:oklch(.648 .2 131.684);--color-lime-700:oklch(.532 .157 131.589);--color-lime-800:oklch(.453 .124 130.933);--color-lime-900:oklch(.405 .101 131.063);--color-lime-950:oklch(.274 .072 132.109);--color-green-50:oklch(.982 .018 155.826);--color-green-100:oklch(.962 .044 156.743);--color-green-200:oklch(.925 .084 155.995);--color-green-300:oklch(.871 .15 154.449);--color-green-400:oklch(.792 .209 151.711);--color-green-500:oklch(.723 .219 149.579);--color-green-600:oklch(.627 .194 149.214);--color-green-700:oklch(.527 .154 150.069);--color-green-800:oklch(.448 .119 151.328);--color-green-900:oklch(.393 .095 152.535);--color-green-950:oklch(.266 .065 152.934);--color-emerald-50:oklch(.979 .021 166.113);--color-emerald-100:oklch(.95 .052 163.051);--color-emerald-200:oklch(.905 .093 164.15);--color-emerald-300:oklch(.845 .143 164.978);--color-emerald-400:oklch(.765 .177 163.223);--color-emerald-500:oklch(.696 .17 162.48);--color-emerald-600:oklch(.596 .145 163.225);--color-emerald-700:oklch(.508 .118 165.612);--color-emerald-800:oklch(.432 .095 166.913);--color-emerald-900:oklch(.378 .077 168.94);--color-emerald-950:oklch(.262 .051 172.552);--color-teal-50:oklch(.984 .014 180.72);--color-teal-100:oklch(.953 .051 180.801);--color-teal-200:oklch(.91 .096 180.426);--color-teal-300:oklch(.855 .138 181.071);--color-teal-400:oklch(.777 .152 181.912);--color-teal-500:oklch(.704 .14 182.503);--color-teal-600:oklch(.6 .118 184.704);--color-teal-700:oklch(.511 .096 186.391);--color-teal-800:oklch(.437 .078 188.216);--color-teal-900:oklch(.386 .063 188.416);--color-teal-950:oklch(.277 .046 192.524);--color-cyan-50:oklch(.984 .019 200.873);--color-cyan-100:oklch(.956 .045 203.388);--color-cyan-200:oklch(.917 .08 205.041);--color-cyan-300:oklch(.865 .127 207.078);--color-cyan-400:oklch(.789 .154 211.53);--color-cyan-500:oklch(.715 .143 215.221);--color-cyan-600:oklch(.609 .126 221.723);--color-cyan-700:oklch(.52 .105 223.128);--color-cyan-800:oklch(.45 .085 224.283);--color-cyan-900:oklch(.398 .07 227.392);--color-cyan-950:oklch(.302 .056 229.695);--color-sky-50:oklch(.977 .013 236.62);--color-sky-100:oklch(.951 .026 236.824);--color-sky-200:oklch(.901 .058 230.902);--color-sky-300:oklch(.828 .111 230.318);--color-sky-400:oklch(.746 .16 232.661);--color-sky-500:oklch(.685 .169 237.323);--color-sky-600:oklch(.588 .158 241.966);--color-sky-700:oklch(.5 .134 242.749);--color-sky-800:oklch(.443 .11 240.79);--color-sky-900:oklch(.391 .09 240.876);--color-sky-950:oklch(.293 .066 243.157);--color-blue-50:oklch(.97 .014 254.604);--color-blue-100:oklch(.932 .032 255.585);--color-blue-200:oklch(.882 .059 254.128);--color-blue-300:oklch(.809 .105 251.813);--color-blue-400:oklch(.707 .165 254.624);--color-blue-500:oklch(.623 .214 259.815);--color-blue-600:oklch(.546 .245 262.881);--color-blue-700:oklch(.488 .243 264.376);--color-blue-800:oklch(.424 .199 265.638);--color-blue-900:oklch(.379 .146 265.522);--color-blue-950:oklch(.282 .091 267.935);--color-indigo-50:oklch(.962 .018 272.314);--color-indigo-100:oklch(.93 .034 272.788);--color-indigo-200:oklch(.87 .065 274.039);--color-indigo-300:oklch(.785 .115 274.713);--color-indigo-400:oklch(.673 .182 276.935);--color-indigo-500:oklch(.585 .233 277.117);--color-indigo-600:oklch(.511 .262 276.966);--color-indigo-700:oklch(.457 .24 277.023);--color-indigo-800:oklch(.398 .195 277.366);--color-indigo-900:oklch(.359 .144 278.697);--color-indigo-950:oklch(.257 .09 281.288);--color-violet-50:oklch(.969 .016 293.756);--color-violet-100:oklch(.943 .029 294.588);--color-violet-200:oklch(.894 .057 293.283);--color-violet-300:oklch(.811 .111 293.571);--color-violet-400:oklch(.702 .183 293.541);--color-violet-500:oklch(.606 .25 292.717);--color-violet-600:oklch(.541 .281 293.009);--color-violet-700:oklch(.491 .27 292.581);--color-violet-800:oklch(.432 .232 292.759);--color-violet-900:oklch(.38 .189 293.745);--color-violet-950:oklch(.283 .141 291.089);--color-purple-50:oklch(.977 .014 308.299);--color-purple-100:oklch(.946 .033 307.174);--color-purple-200:oklch(.902 .063 306.703);--color-purple-300:oklch(.827 .119 306.383);--color-purple-400:oklch(.714 .203 305.504);--color-purple-500:oklch(.627 .265 303.9);--color-purple-600:oklch(.558 .288 302.321);--color-purple-700:oklch(.496 .265 301.924);--color-purple-800:oklch(.438 .218 303.724);--color-purple-900:oklch(.381 .176 304.987);--color-purple-950:oklch(.291 .149 302.717);--color-fuchsia-50:oklch(.977 .017 320.058);--color-fuchsia-100:oklch(.952 .037 318.852);--color-fuchsia-200:oklch(.903 .076 319.62);--color-fuchsia-300:oklch(.833 .145 321.434);--color-fuchsia-400:oklch(.74 .238 322.16);--color-fuchsia-500:oklch(.667 .295 322.15);--color-fuchsia-600:oklch(.591 .293 322.896);--color-fuchsia-700:oklch(.518 .253 323.949);--color-fuchsia-800:oklch(.452 .211 324.591);--color-fuchsia-900:oklch(.401 .17 325.612);--color-fuchsia-950:oklch(.293 .136 325.661);--color-pink-50:oklch(.971 .014 343.198);--color-pink-100:oklch(.948 .028 342.258);--color-pink-200:oklch(.899 .061 343.231);--color-pink-300:oklch(.823 .12 346.018);--color-pink-400:oklch(.718 .202 349.761);--color-pink-500:oklch(.656 .241 354.308);--color-pink-600:oklch(.592 .249 .584);--color-pink-700:oklch(.525 .223 3.958);--color-pink-800:oklch(.459 .187 3.815);--color-pink-900:oklch(.408 .153 2.432);--color-pink-950:oklch(.284 .109 3.907);--color-rose-50:oklch(.969 .015 12.422);--color-rose-100:oklch(.941 .03 12.58);--color-rose-200:oklch(.892 .058 10.001);--color-rose-300:oklch(.81 .117 11.638);--color-rose-400:oklch(.712 .194 13.428);--color-rose-500:oklch(.645 .246 16.439);--color-rose-600:oklch(.586 .253 17.585);--color-rose-700:oklch(.514 .222 16.935);--color-rose-800:oklch(.455 .188 13.697);--color-rose-900:oklch(.41 .159 10.272);--color-rose-950:oklch(.271 .105 12.094);--color-slate-50:oklch(.984 .003 247.858);--color-slate-100:oklch(.968 .007 247.896);--color-slate-200:oklch(.929 .013 255.508);--color-slate-300:oklch(.869 .022 252.894);--color-slate-400:oklch(.704 .04 256.788);--color-slate-500:oklch(.554 .046 257.417);--color-slate-600:oklch(.446 .043 257.281);--color-slate-700:oklch(.372 .044 257.287);--color-slate-800:oklch(.279 .041 260.031);--color-slate-900:oklch(.208 .042 265.755);--color-slate-950:oklch(.129 .042 264.695);--color-gray-50:oklch(.985 .002 247.839);--color-gray-100:oklch(.967 .003 264.542);--color-gray-200:oklch(.928 .006 264.531);--color-gray-300:oklch(.872 .01 258.338);--color-gray-400:oklch(.707 .022 261.325);--color-gray-500:oklch(.551 .027 264.364);--color-gray-600:oklch(.446 .03 256.802);--color-gray-700:oklch(.373 .034 259.733);--color-gray-800:oklch(.278 .033 256.848);--color-gray-900:oklch(.21 .034 264.665);--color-gray-950:oklch(.13 .028 261.692);--color-zinc-50:oklch(.985 0 0);--color-zinc-100:oklch(.967 .001 286.375);--color-zinc-200:oklch(.92 .004 286.32);--color-zinc-300:oklch(.871 .006 286.286);--color-zinc-400:oklch(.705 .015 286.067);--color-zinc-500:oklch(.552 .016 285.938);--color-zinc-600:oklch(.442 .017 285.786);--color-zinc-700:oklch(.37 .013 285.805);--color-zinc-800:oklch(.274 .006 286.033);--color-zinc-900:oklch(.21 .006 285.885);--color-zinc-950:oklch(.141 .005 285.823);--color-neutral-50:oklch(.985 0 0);--color-neutral-100:oklch(.97 0 0);--color-neutral-200:oklch(.922 0 0);--color-neutral-300:oklch(.87 0 0);--color-neutral-400:oklch(.708 0 0);--color-neutral-500:oklch(.556 0 0);--color-neutral-600:oklch(.439 0 0);--color-neutral-700:oklch(.371 0 0);--color-neutral-800:oklch(.269 0 0);--color-neutral-900:oklch(.205 0 0);--color-neutral-950:oklch(.145 0 0);--color-stone-50:oklch(.985 .001 106.423);--color-stone-100:oklch(.97 .001 106.424);--color-stone-200:oklch(.923 .003 48.717);--color-stone-300:oklch(.869 .005 56.366);--color-stone-400:oklch(.709 .01 56.259);--color-stone-500:oklch(.553 .013 58.071);--color-stone-600:oklch(.444 .011 73.639);--color-stone-700:oklch(.374 .01 67.558);--color-stone-800:oklch(.268 .007 34.298);--color-stone-900:oklch(.216 .006 56.043);--color-stone-950:oklch(.147 .004 49.25);--color-black:#000;--color-white:#fff;--spacing:.25rem;--breakpoint-sm:40rem;--breakpoint-md:48rem;--breakpoint-lg:64rem;--breakpoint-xl:80rem;--breakpoint-2xl:96rem;--container-3xs:16rem;--container-2xs:18rem;--container-xs:20rem;--container-sm:24rem;--container-md:28rem;--container-lg:32rem;--container-xl:36rem;--container-2xl:42rem;--container-3xl:48rem;--container-4xl:56rem;--container-5xl:64rem;--container-6xl:72rem;--container-7xl:80rem;--text-xs:.75rem;--text-xs--line-height:calc(1/.75);--text-sm:.875rem;--text-sm--line-height:calc(1.25/.875);--text-base:1rem;--text-base--line-height: 1.5 ;--text-lg:1.125rem;--text-lg--line-height:calc(1.75/1.125);--text-xl:1.25rem;--text-xl--line-height:calc(1.75/1.25);--text-2xl:1.5rem;--text-2xl--line-height:calc(2/1.5);--text-3xl:1.875rem;--text-3xl--line-height: 1.2 ;--text-4xl:2.25rem;--text-4xl--line-height:calc(2.5/2.25);--text-5xl:3rem;--text-5xl--line-height:1;--text-6xl:3.75rem;--text-6xl--line-height:1;--text-7xl:4.5rem;--text-7xl--line-height:1;--text-8xl:6rem;--text-8xl--line-height:1;--text-9xl:8rem;--text-9xl--line-height:1;--font-weight-thin:100;--font-weight-extralight:200;--font-weight-light:300;--font-weight-normal:400;--font-weight-medium:500;--font-weight-semibold:600;--font-weight-bold:700;--font-weight-extrabold:800;--font-weight-black:900;--tracking-tighter:-.05em;--tracking-tight:-.025em;--tracking-normal:0em;--tracking-wide:.025em;--tracking-wider:.05em;--tracking-widest:.1em;--leading-tight:1.25;--leading-snug:1.375;--leading-normal:1.5;--leading-relaxed:1.625;--leading-loose:2;--radius-xs:.125rem;--radius-sm:.25rem;--radius-md:.375rem;--radius-lg:.5rem;--radius-xl:.75rem;--radius-2xl:1rem;--radius-3xl:1.5rem;--radius-4xl:2rem;--shadow-2xs:0 1px #0000000d;--shadow-xs:0 1px 2px 0 #0000000d;--shadow-sm:0 1px 3px 0 #0000001a,0 1px 2px -1px #0000001a;--shadow-md:0 4px 6px -1px #0000001a,0 2px 4px -2px #0000001a;--shadow-lg:0 10px 15px -3px #0000001a,0 4px 6px -4px #0000001a;--shadow-xl:0 20px 25px -5px #0000001a,0 8px 10px -6px #0000001a;--shadow-2xl:0 25px 50px -12px #00000040;--inset-shadow-2xs:inset 0 1px #0000000d;--inset-shadow-xs:inset 0 1px 1px #0000000d;--inset-shadow-sm:inset 0 2px 4px #0000000d;--drop-shadow-xs:0 1px 1px #0000000d;--drop-shadow-sm:0 1px 2px #00000026;--drop-shadow-md:0 3px 3px #0000001f;--drop-shadow-lg:0 4px 4px #00000026;--drop-shadow-xl:0 9px 7px #0000001a;--drop-shadow-2xl:0 25px 25px #00000026;--ease-in:cubic-bezier(.4,0,1,1);--ease-out:cubic-bezier(0,0,.2,1);--ease-in-out:cubic-bezier(.4,0,.2,1);--animate-spin:spin 1s linear infinite;--animate-ping:ping 1s cubic-bezier(0,0,.2,1)infinite;--animate-pulse:pulse 2s cubic-bezier(.4,0,.6,1)infinite;--animate-bounce:bounce 1s infinite;--blur-xs:4px;--blur-sm:8px;--blur-md:12px;--blur-lg:16px;--blur-xl:24px;--blur-2xl:40px;--blur-3xl:64px;--perspective-dramatic:100px;--perspective-near:300px;--perspective-normal:500px;--perspective-midrange:800px;--perspective-distant:1200px;--aspect-video:16/9;--default-transition-duration:.15s;--default-transition-timing-function:cubic-bezier(.4,0,.2,1);--default-font-family:var(--font-sans);--default-font-feature-settings:var(--font-sans--font-feature-settings);--default-font-variation-settings:var(--font-sans--font-variation-settings);--default-mono-font-family:var(--font-mono);--default-mono-font-feature-settings:var(--font-mono--font-feature-settings);--default-mono-font-variation-settings:var(--font-mono--font-variation-settings)}}@layer base{*,:after,:before,::backdrop{box-sizing:border-box;border:0 solid;margin:0;padding:0}::file-selector-button{box-sizing:border-box;border:0 solid;margin:0;padding:0}html,:host{-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;line-height:1.5;font-family:var(--default-font-family,ui-sans-serif,system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji");font-feature-settings:var(--default-font-feature-settings,normal);font-variation-settings:var(--default-font-variation-settings,normal);-webkit-tap-highlight-color:transparent}body{line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;-webkit-text-decoration:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,samp,pre{font-family:var(--default-mono-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace);font-feature-settings:var(--default-mono-font-feature-settings,normal);font-variation-settings:var(--default-mono-font-variation-settings,normal);font-size:1em}small{font-size:80%}sub,sup{vertical-align:baseline;font-size:75%;line-height:0;position:relative}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}:-moz-focusring{outline:auto}progress{vertical-align:baseline}summary{display:list-item}ol,ul,menu{list-style:none}img,svg,video,canvas,audio,iframe,embed,object{vertical-align:middle;display:block}img,video{max-width:100%;height:auto}button,input,select,optgroup,textarea{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}::file-selector-button{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}:where(select:is([multiple],[size])) optgroup{font-weight:bolder}:where(select:is([multiple],[size])) optgroup option{padding-inline-start:20px}::file-selector-button{margin-inline-end:4px}::placeholder{opacity:1;color:color-mix(in oklab,currentColor 50%,transparent)}textarea{resize:vertical}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-date-and-time-value{min-height:1lh;text-align:inherit}::-webkit-datetime-edit{display:inline-flex}::-webkit-datetime-edit-fields-wrapper{padding:0}::-webkit-datetime-edit{padding-block:0}::-webkit-datetime-edit-year-field{padding-block:0}::-webkit-datetime-edit-month-field{padding-block:0}::-webkit-datetime-edit-day-field{padding-block:0}::-webkit-datetime-edit-hour-field{padding-block:0}::-webkit-datetime-edit-minute-field{padding-block:0}::-webkit-datetime-edit-second-field{padding-block:0}::-webkit-datetime-edit-millisecond-field{padding-block:0}::-webkit-datetime-edit-meridiem-field{padding-block:0}:-moz-ui-invalid{box-shadow:none}button,input:where([type=button],[type=reset],[type=submit]){-webkit-appearance:button;-moz-appearance:button;appearance:button}::file-selector-button{-webkit-appearance:button;-moz-appearance:button;appearance:button}::-webkit-inner-spin-button{height:auto}::-webkit-outer-spin-button{height:auto}[hidden]:where(:not([hidden=until-found])){display:none!important}}@layer components;@layer utilities{.absolute{position:absolute}.relative{position:relative}.static{position:static}.inset-0{inset:calc(var(--spacing)*0)}.-mt-\[4\.9rem\]{margin-top:-4.9rem}.-mb-px{margin-bottom:-1px}.mb-1{margin-bottom:calc(var(--spacing)*1)}.mb-2{margin-bottom:calc(var(--spacing)*2)}.mb-4{margin-bottom:calc(var(--spacing)*4)}.mb-6{margin-bottom:calc(var(--spacing)*6)}.-ml-8{margin-left:calc(var(--spacing)*-8)}.flex{display:flex}.hidden{display:none}.inline-block{display:inline-block}.inline-flex{display:inline-flex}.table{display:table}.aspect-\[335\/376\]{aspect-ratio:335/376}.h-1{height:calc(var(--spacing)*1)}.h-1\.5{height:calc(var(--spacing)*1.5)}.h-2{height:calc(var(--spacing)*2)}.h-2\.5{height:calc(var(--spacing)*2.5)}.h-3{height:calc(var(--spacing)*3)}.h-3\.5{height:calc(var(--spacing)*3.5)}.h-14{height:calc(var(--spacing)*14)}.h-14\.5{height:calc(var(--spacing)*14.5)}.min-h-screen{min-height:100vh}.w-1{width:calc(var(--spacing)*1)}.w-1\.5{width:calc(var(--spacing)*1.5)}.w-2{width:calc(var(--spacing)*2)}.w-2\.5{width:calc(var(--spacing)*2.5)}.w-3{width:calc(var(--spacing)*3)}.w-3\.5{width:calc(var(--spacing)*3.5)}.w-\[448px\]{width:448px}.w-full{width:100%}.max-w-\[335px\]{max-width:335px}.max-w-none{max-width:none}.flex-1{flex:1}.shrink-0{flex-shrink:0}.translate-y-0{--tw-translate-y:calc(var(--spacing)*0);translate:var(--tw-translate-x)var(--tw-translate-y)}.transform{transform:var(--tw-rotate-x)var(--tw-rotate-y)var(--tw-rotate-z)var(--tw-skew-x)var(--tw-skew-y)}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.items-center{align-items:center}.justify-center{justify-content:center}.justify-end{justify-content:flex-end}.gap-3{gap:calc(var(--spacing)*3)}.gap-4{gap:calc(var(--spacing)*4)}:where(.space-x-1>:not(:last-child)){--tw-space-x-reverse:0;margin-inline-start:calc(calc(var(--spacing)*1)*var(--tw-space-x-reverse));margin-inline-end:calc(calc(var(--spacing)*1)*calc(1 - var(--tw-space-x-reverse)))}.overflow-hidden{overflow:hidden}.rounded-full{border-radius:3.40282e38px}.rounded-sm{border-radius:var(--radius-sm)}.rounded-t-lg{border-top-left-radius:var(--radius-lg);border-top-right-radius:var(--radius-lg)}.rounded-br-lg{border-bottom-right-radius:var(--radius-lg)}.rounded-bl-lg{border-bottom-left-radius:var(--radius-lg)}.border{border-style:var(--tw-border-style);border-width:1px}.border-\[\#19140035\]{border-color:#19140035}.border-\[\#e3e3e0\]{border-color:#e3e3e0}.border-black{border-color:var(--color-black)}.border-transparent{border-color:#0000}.bg-\[\#1b1b18\]{background-color:#1b1b18}.bg-\[\#FDFDFC\]{background-color:#fdfdfc}.bg-\[\#dbdbd7\]{background-color:#dbdbd7}.bg-\[\#fff2f2\]{background-color:#fff2f2}.bg-white{background-color:var(--color-white)}.p-6{padding:calc(var(--spacing)*6)}.px-5{padding-inline:calc(var(--spacing)*5)}.py-1{padding-block:calc(var(--spacing)*1)}.py-1\.5{padding-block:calc(var(--spacing)*1.5)}.py-2{padding-block:calc(var(--spacing)*2)}.pb-12{padding-bottom:calc(var(--spacing)*12)}.text-sm{font-size:var(--text-sm);line-height:var(--tw-leading,var(--text-sm--line-height))}.text-\[13px\]{font-size:13px}.leading-\[20px\]{--tw-leading:20px;line-height:20px}.leading-normal{--tw-leading:var(--leading-normal);line-height:var(--leading-normal)}.font-medium{--tw-font-weight:var(--font-weight-medium);font-weight:var(--font-weight-medium)}.text-\[\#1b1b18\]{color:#1b1b18}.text-\[\#706f6c\]{color:#706f6c}.text-\[\#F53003\],.text-\[\#f53003\]{color:#f53003}.text-white{color:var(--color-white)}.underline{text-decoration-line:underline}.underline-offset-4{text-underline-offset:4px}.opacity-100{opacity:1}.shadow-\[0px_0px_1px_0px_rgba\(0\,0\,0\,0\.03\)\,0px_1px_2px_0px_rgba\(0\,0\,0\,0\.06\)\]{--tw-shadow:0px 0px 1px 0px var(--tw-shadow-color,#00000008),0px 1px 2px 0px var(--tw-shadow-color,#0000000f);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-\[inset_0px_0px_0px_1px_rgba\(26\,26\,0\,0\.16\)\]{--tw-shadow:inset 0px 0px 0px 1px var(--tw-shadow-color,#1a1a0029);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.\!filter{filter:var(--tw-blur,)var(--tw-brightness,)var(--tw-contrast,)var(--tw-grayscale,)var(--tw-hue-rotate,)var(--tw-invert,)var(--tw-saturate,)var(--tw-sepia,)var(--tw-drop-shadow,)!important}.filter{filter:var(--tw-blur,)var(--tw-brightness,)var(--tw-contrast,)var(--tw-grayscale,)var(--tw-hue-rotate,)var(--tw-invert,)var(--tw-saturate,)var(--tw-sepia,)var(--tw-drop-shadow,)}.transition-all{transition-property:all;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-opacity{transition-property:opacity;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.delay-300{transition-delay:.3s}.duration-750{--tw-duration:.75s;transition-duration:.75s}.not-has-\[nav\]\:hidden:not(:has(:is(nav))){display:none}.before\:absolute:before{content:var(--tw-content);position:absolute}.before\:top-0:before{content:var(--tw-content);top:calc(var(--spacing)*0)}.before\:top-1\/2:before{content:var(--tw-content);top:50%}.before\:bottom-0:before{content:var(--tw-content);bottom:calc(var(--spacing)*0)}.before\:bottom-1\/2:before{content:var(--tw-content);bottom:50%}.before\:left-\[0\.4rem\]:before{content:var(--tw-content);left:.4rem}.before\:border-l:before{content:var(--tw-content);border-left-style:var(--tw-border-style);border-left-width:1px}.before\:border-\[\#e3e3e0\]:before{content:var(--tw-content);border-color:#e3e3e0}@media (hover:hover){.hover\:border-\[\#1915014a\]:hover{border-color:#1915014a}.hover\:border-\[\#19140035\]:hover{border-color:#19140035}.hover\:border-black:hover{border-color:var(--color-black)}.hover\:bg-black:hover{background-color:var(--color-black)}}@media (width>=64rem){.lg\:-mt-\[6\.6rem\]{margin-top:-6.6rem}.lg\:mb-0{margin-bottom:calc(var(--spacing)*0)}.lg\:mb-6{margin-bottom:calc(var(--spacing)*6)}.lg\:-ml-px{margin-left:-1px}.lg\:ml-0{margin-left:calc(var(--spacing)*0)}.lg\:block{display:block}.lg\:aspect-auto{aspect-ratio:auto}.lg\:w-\[438px\]{width:438px}.lg\:max-w-4xl{max-width:var(--container-4xl)}.lg\:grow{flex-grow:1}.lg\:flex-row{flex-direction:row}.lg\:justify-center{justify-content:center}.lg\:rounded-t-none{border-top-left-radius:0;border-top-right-radius:0}.lg\:rounded-tl-lg{border-top-left-radius:var(--radius-lg)}.lg\:rounded-r-lg{border-top-right-radius:var(--radius-lg);border-bottom-right-radius:var(--radius-lg)}.lg\:rounded-br-none{border-bottom-right-radius:0}.lg\:p-8{padding:calc(var(--spacing)*8)}.lg\:p-20{padding:calc(var(--spacing)*20)}}@media (prefers-color-scheme:dark){.dark\:block{display:block}.dark\:hidden{display:none}.dark\:border-\[\#3E3E3A\]{border-color:#3e3e3a}.dark\:border-\[\#eeeeec\]{border-color:#eeeeec}.dark\:bg-\[\#0a0a0a\]{background-color:#0a0a0a}.dark\:bg-\[\#1D0002\]{background-color:#1d0002}.dark\:bg-\[\#3E3E3A\]{background-color:#3e3e3a}.dark\:bg-\[\#161615\]{background-color:#161615}.dark\:bg-\[\#eeeeec\]{background-color:#eeeeec}.dark\:text-\[\#1C1C1A\]{color:#1c1c1a}.dark\:text-\[\#A1A09A\]{color:#a1a09a}.dark\:text-\[\#EDEDEC\]{color:#ededec}.dark\:text-\[\#F61500\]{color:#f61500}.dark\:text-\[\#FF4433\]{color:#f43}.dark\:shadow-\[inset_0px_0px_0px_1px_\#fffaed2d\]{--tw-shadow:inset 0px 0px 0px 1px var(--tw-shadow-color,#fffaed2d);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.dark\:before\:border-\[\#3E3E3A\]:before{content:var(--tw-content);border-color:#3e3e3a}@media (hover:hover){.dark\:hover\:border-\[\#3E3E3A\]:hover{border-color:#3e3e3a}.dark\:hover\:border-\[\#62605b\]:hover{border-color:#62605b}.dark\:hover\:border-white:hover{border-color:var(--color-white)}.dark\:hover\:bg-white:hover{background-color:var(--color-white)}}}@starting-style{.starting\:translate-y-4{--tw-translate-y:calc(var(--spacing)*4);translate:var(--tw-translate-x)var(--tw-translate-y)}}@starting-style{.starting\:translate-y-6{--tw-translate-y:calc(var(--spacing)*6);translate:var(--tw-translate-x)var(--tw-translate-y)}}@starting-style{.starting\:opacity-0{opacity:0}}}@keyframes spin{to{transform:rotate(360deg)}}@keyframes ping{75%,to{opacity:0;transform:scale(2)}}@keyframes pulse{50%{opacity:.5}}@keyframes bounce{0%,to{animation-timing-function:cubic-bezier(.8,0,1,1);transform:translateY(-25%)}50%{animation-timing-function:cubic-bezier(0,0,.2,1);transform:none}}@property --tw-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-y{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-z{syntax:"*";inherits:false;initial-value:0}@property --tw-rotate-x{syntax:"*";inherits:false;initial-value:rotateX(0)}@property --tw-rotate-y{syntax:"*";inherits:false;initial-value:rotateY(0)}@property --tw-rotate-z{syntax:"*";inherits:false;initial-value:rotateZ(0)}@property --tw-skew-x{syntax:"*";inherits:false;initial-value:skewX(0)}@property --tw-skew-y{syntax:"*";inherits:false;initial-value:skewY(0)}@property --tw-space-x-reverse{syntax:"*";inherits:false;initial-value:0}@property --tw-border-style{syntax:"*";inherits:false;initial-value:solid}@property --tw-leading{syntax:"*";inherits:false}@property --tw-font-weight{syntax:"*";inherits:false}@property --tw-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-shadow-color{syntax:"*";inherits:false}@property --tw-inset-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-inset-shadow-color{syntax:"*";inherits:false}@property --tw-ring-color{syntax:"*";inherits:false}@property --tw-ring-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-inset-ring-color{syntax:"*";inherits:false}@property --tw-inset-ring-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-ring-inset{syntax:"*";inherits:false}@property --tw-ring-offset-width{syntax:"<length>";inherits:false;initial-value:0}@property --tw-ring-offset-color{syntax:"*";inherits:false;initial-value:#fff}@property --tw-ring-offset-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-blur{syntax:"*";inherits:false}@property --tw-brightness{syntax:"*";inherits:false}@property --tw-contrast{syntax:"*";inherits:false}@property --tw-grayscale{syntax:"*";inherits:false}@property --tw-hue-rotate{syntax:"*";inherits:false}@property --tw-invert{syntax:"*";inherits:false}@property --tw-opacity{syntax:"*";inherits:false}@property --tw-saturate{syntax:"*";inherits:false}@property --tw-sepia{syntax:"*";inherits:false}@property --tw-drop-shadow{syntax:"*";inherits:false}@property --tw-duration{syntax:"*";inherits:false}@property --tw-content{syntax:"*";inherits:false;initial-value:""}
-            </style>
-        @endif
-    </head>
-    <body class="bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] flex p-6 lg:p-8 items-center lg:justify-center min-h-screen flex-col">
-        <header class="w-full lg:max-w-4xl max-w-[335px] text-sm mb-6 not-has-[nav]:hidden">
-            @if (Route::has('login'))
-                <nav class="flex items-center justify-end gap-4">
-                    @auth
-                        <a
-                            href="{{ url('/dashboard') }}"
-                            class="inline-block px-5 py-1.5 dark:text-[#EDEDEC] border-[#19140035] hover:border-[#1915014a] border text-[#1b1b18] dark:border-[#3E3E3A] dark:hover:border-[#62605b] rounded-sm text-sm leading-normal"
-                        >
-                            Dashboard
-                        </a>
-                    @else
-                        <a
-                            href="{{ route('login') }}"
-                            class="inline-block px-5 py-1.5 dark:text-[#EDEDEC] text-[#1b1b18] border border-transparent hover:border-[#19140035] dark:hover:border-[#3E3E3A] rounded-sm text-sm leading-normal"
-                        >
-                            Log in
-                        </a>
-
-                        @if (Route::has('register'))
-                            <a
-                                href="{{ route('register') }}"
-                                class="inline-block px-5 py-1.5 dark:text-[#EDEDEC] border-[#19140035] hover:border-[#1915014a] border text-[#1b1b18] dark:border-[#3E3E3A] dark:hover:border-[#62605b] rounded-sm text-sm leading-normal">
-                                Register
-                            </a>
-                        @endif
-                    @endauth
-                </nav>
-            @endif
-        </header>
-        <div class="flex items-center justify-center w-full transition-opacity opacity-100 duration-750 lg:grow starting:opacity-0">
-            <main class="flex max-w-[335px] w-full flex-col-reverse lg:max-w-4xl lg:flex-row">
-                <div class="text-[13px] leading-[20px] flex-1 p-6 pb-12 lg:p-20 bg-white dark:bg-[#161615] dark:text-[#EDEDEC] shadow-[inset_0px_0px_0px_1px_rgba(26,26,0,0.16)] dark:shadow-[inset_0px_0px_0px_1px_#fffaed2d] rounded-bl-lg rounded-br-lg lg:rounded-tl-lg lg:rounded-br-none">
-                    <h1 class="mb-1 font-medium">Let's get started</h1>
-                    <p class="mb-2 text-[#706f6c] dark:text-[#A1A09A]">Laravel has an incredibly rich ecosystem. <br>We suggest starting with the following.</p>
-                    <ul class="flex flex-col mb-4 lg:mb-6">
-                        <li class="flex items-center gap-4 py-2 relative before:border-l before:border-[#e3e3e0] dark:before:border-[#3E3E3A] before:top-1/2 before:bottom-0 before:left-[0.4rem] before:absolute">
-                            <span class="relative py-1 bg-white dark:bg-[#161615]">
-                                <span class="flex items-center justify-center rounded-full bg-[#FDFDFC] dark:bg-[#161615] shadow-[0px_0px_1px_0px_rgba(0,0,0,0.03),0px_1px_2px_0px_rgba(0,0,0,0.06)] w-3.5 h-3.5 border dark:border-[#3E3E3A] border-[#e3e3e0]">
-                                    <span class="rounded-full bg-[#dbdbd7] dark:bg-[#3E3E3A] w-1.5 h-1.5"></span>
-                                </span>
-                            </span>
-                            <span>
-                                Read the
-                                <a href="https://laravel.com/docs" target="_blank" class="inline-flex items-center space-x-1 font-medium underline underline-offset-4 text-[#f53003] dark:text-[#FF4433] ml-1">
-                                    <span>Documentation</span>
-                                    
-                                </a>
-                            </span>
-                        </li>
-                        <li class="flex items-center gap-4 py-2 relative before:border-l before:border-[#e3e3e0] dark:before:border-[#3E3E3A] before:bottom-1/2 before:top-0 before:left-[0.4rem] before:absolute">
-                            <span class="relative py-1 bg-white dark:bg-[#161615]">
-                                <span class="flex items-center justify-center rounded-full bg-[#FDFDFC] dark:bg-[#161615] shadow-[0px_0px_1px_0px_rgba(0,0,0,0.03),0px_1px_2px_0px_rgba(0,0,0,0.06)] w-3.5 h-3.5 border dark:border-[#3E3E3A] border-[#e3e3e0]">
-                                    <span class="rounded-full bg-[#dbdbd7] dark:bg-[#3E3E3A] w-1.5 h-1.5"></span>
-                                </span>
-                            </span>
-                            <span>
-                                Watch video tutorials at
-                                <a href="https://laracasts.com" target="_blank" class="inline-flex items-center space-x-1 font-medium underline underline-offset-4 text-[#f53003] dark:text-[#FF4433] ml-1">
-                                    <span>Laracasts</span>
-                                    
-                                </a>
-                            </span>
-                        </li>
-                    </ul>
-                    <ul class="flex gap-3 text-sm leading-normal">
-                        <li>
-                            <a href="https://cloud.laravel.com" target="_blank" class="inline-block dark:bg-[#eeeeec] dark:border-[#eeeeec] dark:text-[#1C1C1A] dark:hover:bg-white dark:hover:border-white hover:bg-black hover:border-black px-5 py-1.5 bg-[#1b1b18] rounded-sm border border-black text-white text-sm leading-normal">
-                                Deploy now
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-                <div class="bg-[#fff2f2] dark:bg-[#1D0002] relative lg:-ml-px -mb-px lg:mb-0 rounded-t-lg lg:rounded-t-none lg:rounded-r-lg aspect-[335/376] lg:aspect-auto w-full lg:w-[438px] shrink-0 overflow-hidden">
-                    {{-- Laravel Logo --}}
-                    
-
-                    {{-- Light Mode 12 SVG --}}
-                    
-
-                    {{-- Dark Mode 12 SVG --}}
-                    
-                    <div class="absolute inset-0 rounded-t-lg lg:rounded-t-none lg:rounded-r-lg shadow-[inset_0px_0px_0px_1px_rgba(26,26,0,0.16)] dark:shadow-[inset_0px_0px_0px_1px_#fffaed2d]"></div>
-                </div>
-            </main>
-        </div>
-
-        @if (Route::has('login'))
-            <div class="h-14.5 hidden lg:block"></div>
-        @endif
-    </body>
-</html>
-
-
-=== MODULE: FRONTEND CSS ===
-
-
------ resources/css/app.css -----
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-
-=== MODULE: FRONTEND JS ===
-
-
------ resources/js/app.js -----
-
-console.log('APP JS GELADEN')
-
-import './bootstrap'
-
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOM gestartet')
-
-  const page = document.body.dataset.page
-
-  if (page === 'local-seo') {
-    console.log('local seo')
-    import('./modules/localSeo')
-  }
-
-  if (page === 'crawler') {
-    //import('./modules/crawler')
-  }
-
-  if (page === 'report-show') {
-    //import('./modules/reportShow')
-  }
-
-})
-
-
-
------ resources/js/bootstrap.js -----
-
-import axios from 'axios';
-window.axios = axios;
-
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
-
-
-
------ resources/js/liveScan.js -----
-
-document.addEventListener('DOMContentLoaded', () => {
-
-  const form = document.getElementById('live-scan-form');
-  const spinner = document.getElementById('scan-spinner');
-  const progressEl = document.getElementById('progress-text');
-  const tbody = document.getElementById('result-body');
-  const abortBtn = document.getElementById('abort-button');
-  const abortSection = document.getElementById('abort-section');
-
-  let scanId = null;
-  let currentIndex = 0;
-  let pollingInterval = null;
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const url = form.url.value;
-    const checks = Array.from(document.querySelectorAll('.check-option:checked')).map(el => el.value);
-
-    tbody.innerHTML = '';
-    currentIndex = 0;
-    progressEl.textContent = 'Scan gestartet...';
-    spinner.classList.remove('hidden');
-    abortSection.classList.remove('hidden');
-
-    const res = await fetch("/scan", {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-      },
-      body: JSON.stringify({ url, checks })
-    });
-
-    const data = await res.json();
-    if (!data.scanId) return;
-
-    scanId = data.scanId;
-    startPolling();
-  });
-
-  function startPolling() {
-    pollingInterval = setInterval(async () => {
-
-      const progressRes = await fetch(`/scan/${scanId}/progress?ts=${Date.now()}`);
-      const progress = await progressRes.json();
-
-      progressEl.textContent = `Scanne Seite ${progress.current} / ${progress.total}`;
-
-      while (currentIndex < progress.current) {
-
-        const res = await fetch(`/scan/${scanId}/result/${currentIndex}`);
-        const row = await res.json();
-
-        const tr = document.createElement('tr');
-        tr.className = 'border-b hover:bg-gray-50';
-
-        tr.innerHTML = `
-          <td class="p-2">${currentIndex + 1}</td>
-          <td class="p-2 break-all"><a href="${row.url}" class="text-orange-600 hover:underline" target="_blank">${row.url}</a></td>
-          <td class="p-2">${row.statusCheck?.status ?? '–'}</td>
-          <td class="p-2">${row.altCheck?.altMissing ?? 0}</td>
-          <td class="p-2">${row.headingCheck?.list?.length ?? 0}</td>
-          <td class="p-2 text-red-600">${row.error ?? (row.headingCheck?.errors?.join(', ') ?? '–')}</td>
-        `;
-
-        tbody.appendChild(tr);
-        currentIndex++;
-      }
-
-      if (progress.status === 'done' || progress.status === 'aborted') {
-        clearInterval(pollingInterval);
-        spinner.classList.add('hidden');
-        abortSection.classList.add('hidden');
-        progressEl.textContent = progress.status === 'aborted'
-          ? 'Scan abgebrochen'
-          : 'Scan abgeschlossen';
-      }
-
-    }, 1000);
-  }
-
-  abortBtn.addEventListener('click', async () => {
-
-    if (!scanId) return;
-
-    await fetch('/multiscan/abort', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-      },
-      body: JSON.stringify({ scanId })
-    });
-
-    progressEl.textContent = 'Abbruch wird verarbeitet...';
-  });
-
-});
-
-
-
------ resources/js/modules/localSeo.js -----
-
-console.log('LOCAL SEO MODULE GELADEN')
-
-const form = document.getElementById('local-seo-form')
-if (!form) {
-  console.log('Form nicht gefunden')
-} else {
-  console.log('Form gefunden')
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault()
-    console.log('Submit ausgelöst')
-
-    const formData = new FormData(form)
-
-    const response = await fetch('/local-seo', {
-      method: 'POST',
-      headers: {
-        'X-CSRF-TOKEN': document
-          .querySelector('meta[name="csrf-token"]')
-          .getAttribute('content')
-      },
-      body: formData
-    })
-
-    const data = await response.json()
-    console.log('Antwort:', data)
-
-    if (data.reportId) {
-      window.location.href = `/reports/${data.reportId}`
-    }
-  })
-}
-
-
-=== MODULE: NODE SCANNER (FULL) ===
-
-
------ node-scanner/checks/altCheck.js -----
-
-module.exports = async function altCheck(page) {
-  const images = await page.$$eval('img', imgs =>
-    imgs.map(img => ({
-      src: img.getAttribute('src') || '',
-      alt: img.hasAttribute('alt') ? img.getAttribute('alt') : null
-    }))
-  );
-
-  const altMissing = images.filter(img => img.alt === null).length;
-  const altEmpty = images.filter(img => img.alt !== null && img.alt.trim() === '').length;
-
-  return {
-    imageCount: images.length,
-    altMissing,
-    altEmpty,
-    preview: images.slice(0, 10)
-  };
-};
-
-
-
------ node-scanner/checks/headingCheck.js -----
-
-module.exports = async function headingCheck(page) {
-  const headings = await page.$$eval('h1, h2, h3, h4, h5, h6', nodes =>
-    nodes.map(el => ({
-      tag: el.tagName.toLowerCase(),
-      text: el.textContent.trim()
-    }))
-  );
-
-  const count = headings.reduce((acc, h) => {
-    acc[h.tag] = (acc[h.tag] || 0) + 1;
-    return acc;
-  }, {});
-
-  const errors = [];
-
-  const h1Count = count.h1 || 0;
-  if (h1Count > 1) errors.push('Mehr als eine H1 gefunden');
-  else if (h1Count === 0) errors.push('Keine H1 gefunden');
-
-  const emptyHeadings = headings.filter(h => h.text === '');
-  if (emptyHeadings.length > 0) errors.push(`${emptyHeadings.length} leere Überschrift(en)`);
-
-  return {
-    count,
-    list: headings.slice(0, 10),
-    errors
-  };
-};
-
-
-
------ node-scanner/checks/statusCheck.js -----
-
-module.exports = async function statusCheck(page, url) {
-  const result = {
-    status: null,
-    redirected: false,
-    finalUrl: url,
-    error: null
-  };
-
-  try {
-    const response = await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 20000
-    });
+        if (!Schema::hasTable('crawl_issues')) {
+            return;
+        }
+
+        $issues = [];
+        $now = now();
+
+        $pages = CrawlPage::query()->where('crawl_id', $crawlId)->get(['id', 'url', 'h1_count', 'alt_missing_count']);
+        foreach ($pages as $page) {
+            if ((int) $page->alt_missing_count > 0) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'crawl_page_id' => $page->id,
+                    'type' => 'missing_alt',
+                    'url' => $page->url,
+                    'meta' => ['missing_alt_count' => (int) $page->alt_missing_count],
+                    'created_at' => $now,
+                ];
+            }
+
+            if ((int) $page->h1_count === 0) {
+                $issues[] = [
+                    'crawl_id' => $crawlId,
+                    'crawl_page_id' => $page->id,
+                    'type' => 'missing_h1',
+                    'url' => $page->url,
+                    'meta' => null,
+                    'created_at' => $now,
+                ];
+            }
+        }
+
+        $links = CrawlLink::query()
+            ->where('crawl_id', $crawlId)
+            ->get(['source_url', 'target_url', 'status_code', 'redirect_chain_length']);
