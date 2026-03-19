@@ -39,22 +39,22 @@
         <nav class="hidden md:flex md:flex-1 md:items-center md:text-sm md:font-medium md:ml-8">
 
           <div class="flex items-center space-x-2">
-            @foreach(config('reports.types') as $type => $report)
-            <a href="{{ route($report['route']) }}"
-              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-              {{ $report['label'] }}
+            @foreach(config('reports.types') as $type => $resultType)
+            <a href="{{ route($resultType['route']) }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs($resultType['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              {{ $resultType['label'] }}
             </a>
             @endforeach
 
             <a href="{{ route('projects.index') }}"
-              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('analyses.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('localseo.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
               Projects
             </a>
 
 
-            <a href="{{ route('reports.index') }}"
-              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-              Reports
+            <a href="{{ route('results.index') }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('results.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+              Results
             </a>
 
             <a href="{{ route('crawls.index') }}"
@@ -114,20 +114,20 @@
         class="border-t border-gray-200 pb-3 pt-2 md:hidden"
         x-data="{ mobileSystemOpen: false }">
         <div class="space-y-1 text-sm font-medium">
-          @foreach(config('reports.types') as $type => $report)
-          <a href="{{ route($report['route']) }}"
-            class="block rounded-lg px-3 py-2 {{ request()->routeIs($report['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            {{ $report['label'] }}
+          @foreach(config('reports.types') as $type => $resultType)
+          <a href="{{ route($resultType['route']) }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs($resultType['route']) ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            {{ $resultType['label'] }}
           </a>
           @endforeach
 
           <a href="{{ route('projects.index') }}"
-            class="block rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('analyses.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('projects.*') || request()->routeIs('localseo.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Projects
           </a>
-          <a href="{{ route('reports.index') }}"
-            class="block rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
-            Reports
+          <a href="{{ route('results.index') }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('results.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            Results
           </a>
           <a href="{{ route('crawls.index') }}"
             class="block rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">

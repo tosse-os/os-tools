@@ -23,24 +23,24 @@ class CrawlerController extends Controller
       'url' => 'required|url'
     ]);
 
-    $analysis = $this->findOrCreateAnalysis(
+    $localseo = $this->findOrCreateLocalSeo(
       auth()->id(),
       $request->url,
       null,
       null,
     );
 
-    $report = Report::create([
+    $result = Report::create([
       'id' => (string) Str::uuid(),
       'user_id' => auth()->id(),
-      'analysis_id' => $analysis->id,
+      'analysis_id' => $localseo->id,
       'type' => 'crawler',
       'url' => $request->url,
       'status' => 'queued'
     ]);
 
     Crawl::create([
-      'id' => $report->id,
+      'id' => $result->id,
       'domain' => parse_url($request->url, PHP_URL_HOST) ?: $request->url,
       'root_url' => $request->url,
       'start_url' => $request->url,
@@ -50,14 +50,14 @@ class CrawlerController extends Controller
       'pages_failed' => 0,
     ]);
 
-    RunCrawl::dispatch($report->id);
+    RunCrawl::dispatch($result->id);
 
     return response()->json([
-      'reportId' => $report->id
+      'scanId' => $result->id
     ]);
   }
 
-  private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+  private function findOrCreateLocalSeo(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
   {
     $domain = parse_url($url, PHP_URL_HOST) ?: $url;
 

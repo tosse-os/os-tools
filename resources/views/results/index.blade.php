@@ -5,7 +5,7 @@
 <div class="max-w-5xl mx-auto bg-white shadow-sm rounded-lg border border-gray-100 p-6 space-y-6">
 
   <div class="flex justify-between items-center">
-    <h1 class="text-2xl font-semibold">Letzte Reports</h1>
+    <h1 class="text-2xl font-semibold">Letzte Results</h1>
     <div class="flex items-center gap-4">
       <form method="GET" action="{{ route('localseo.form') }}" id="startAnalysisForm">
         <button
@@ -16,19 +16,19 @@
         </button>
       </form>
 
-      <a href="{{ route('reports.archive') }}" class="text-sm text-blue-600 hover:underline">
+      <a href="{{ route('results.archive') }}" class="text-sm text-blue-600 hover:underline">
         Gesamte Historie anzeigen
       </a>
     </div>
   </div>
 
-  @if($errors->has('reports'))
+  @if($errors->has('results'))
     <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-      {{ $errors->first('reports') }}
+      {{ $errors->first('results') }}
     </div>
   @endif
 
-  <form method="GET" action="{{ route('reports.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+  <form method="GET" action="{{ route('results.index') }}" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
     <div>
       <label for="keyword" class="block text-xs font-medium text-gray-700 mb-1">Keyword</label>
       <input id="keyword" type="text" name="keyword" value="{{ $filters['keyword'] ?? '' }}" class="w-full rounded-lg border-gray-300 text-sm" placeholder="z. B. Glaserei">
@@ -43,16 +43,16 @@
     </div>
     <div class="flex gap-2">
       <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">Filtern</button>
-      <a href="{{ route('reports.index') }}" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition">Reset</a>
+      <a href="{{ route('results.index') }}" class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition">Reset</a>
     </div>
   </form>
 
-  <form action="{{ route('reports.compare') }}" method="GET" class="space-y-4">
+  <form action="{{ route('results.compare') }}" method="GET" class="space-y-4">
     <button type="submit" class="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition">
-      Compare Reports
+      Compare Results
     </button>
 
-    @forelse($reportContexts as $context)
+    @forelse($resultContexts as $context)
       <details class="border rounded-lg shadow-sm" @if($loop->first) open @endif>
         <summary class="list-none cursor-pointer p-4 hover:bg-gray-50">
           <div class="flex justify-between items-start gap-4">
@@ -60,7 +60,7 @@
               <div class="font-semibold text-gray-900">Project: {{ $context['project'] }}</div>
               <div class="text-sm text-gray-700">{{ $context['keyword'] }} • {{ $context['city'] }}</div>
               <div class="text-sm text-gray-700">Domain: {{ $context['domain'] }}</div>
-              <div class="text-xs text-gray-500">{{ $context['reports_count'] }} reports</div>
+              <div class="text-xs text-gray-500">{{ $context['results_count'] }} results</div>
             </div>
             <div class="text-right text-sm text-gray-700">
               <div class="font-semibold">Last score: {{ is_numeric($context['last_score']) ? number_format($context['last_score'], 0) : '—' }}</div>
@@ -69,18 +69,18 @@
         </summary>
 
         <div class="px-4 pb-4 space-y-3 border-t bg-gray-50/40">
-          @foreach($context['reports'] as $report)
+          @foreach($context['results'] as $result)
             @php
-              $project = data_get($report, 'analysis.project.name') ?: '—';
-              $keyword = $report->keyword ?: '—';
-              $city = $report->city ?: '—';
-              $domain = parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—';
-              $startedAt = $report->started_at && strtotime((string) $report->started_at) !== false
-                ? \Carbon\Carbon::parse($report->started_at)
+              $project = data_get($result, 'analysis.project.name') ?: '—';
+              $keyword = $result->keyword ?: '—';
+              $city = $result->city ?: '—';
+              $domain = parse_url((string) ($result->url ?? ''), PHP_URL_HOST) ?: '—';
+              $startedAt = $result->started_at && strtotime((string) $result->started_at) !== false
+                ? \Carbon\Carbon::parse($result->started_at)
                 : null;
-              $scoreValue = is_numeric($report->score) ? (float) $report->score : null;
+              $scoreValue = is_numeric($result->score) ? (float) $result->score : null;
               $scorePercent = $scoreValue !== null ? (int) max(0, min(100, round($scoreValue))) : 0;
-              $normalizedStatus = match ($report->status) {
+              $normalizedStatus = match ($result->status) {
                 'queued' => 'queued',
                 'processing', 'running' => 'processing',
                 'done', 'completed' => 'done',
@@ -100,12 +100,12 @@
                 <div class="flex items-start gap-3">
                   <input
                     type="checkbox"
-                    name="reports[]"
-                    value="{{ $report->id }}"
+                    name="results[]"
+                    value="{{ $result->id }}"
                     class="mt-1 h-4 w-4 rounded border-gray-300"
-                    @checked(collect(request('reports', old('reports', [])))->contains($report->id))>
+                    @checked(collect(request('results', old('results', [])))->contains($result->id))>
 
-                  <a href="{{ route('reports.show', $report) }}" class="block space-y-1 text-sm">
+                  <a href="{{ route('results.show', $result) }}" class="block space-y-1 text-sm">
                     <div class="font-semibold text-gray-900">Project: {{ $project }}</div>
                     <div class="text-gray-700">{{ $keyword }} • {{ $city }}</div>
                     <div class="text-gray-700">{{ $domain }}</div>
@@ -131,7 +131,7 @@
         </div>
       </details>
     @empty
-      <div class="text-gray-500">Keine Reports vorhanden.</div>
+      <div class="text-gray-500">Keine Results vorhanden.</div>
     @endforelse
   </form>
 

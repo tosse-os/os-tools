@@ -20,7 +20,7 @@ Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
 /*
 |--------------------------------------------------------------------------
-| LOCAL SEO REPORT
+| LOCAL SEO RESULT
 |--------------------------------------------------------------------------
 */
 
@@ -42,14 +42,14 @@ Route::post('/crawls/{crawl}/rerun', [CrawlController::class, 'rerun'])->name('c
 
 /*
 |--------------------------------------------------------------------------
-| PROJECTS & ANALYSES
+| PROJECTS & LOCALSEO
 |--------------------------------------------------------------------------
 */
 
 Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');
 Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
 
-Route::get('/analyses/{analysis}', [AnalysisController::class, 'show'])->name('analyses.show');
+Route::get('/localseo/{localseo}', [AnalysisController::class, 'show'])->name('localseo.show');
 
 /*
 |--------------------------------------------------------------------------
@@ -57,19 +57,19 @@ Route::get('/analyses/{analysis}', [AnalysisController::class, 'show'])->name('a
 |--------------------------------------------------------------------------
 */
 
-Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
-Route::get('/reports/archive', [ReportController::class, 'archive'])->name('reports.archive');
-Route::get('/reports/compare', [ReportController::class, 'compare'])->name('reports.compare');
-Route::get('/reports/{report}', [ReportController::class, 'show'])->name('reports.show');
+Route::get('/results', [ReportController::class, 'index'])->name('results.index');
+Route::get('/results/archive', [ReportController::class, 'archive'])->name('results.archive');
+Route::get('/results/compare', [ReportController::class, 'compare'])->name('results.compare');
+Route::get('/results/{report}', [ReportController::class, 'show'])->name('results.show');
 
-Route::get('/reports/{report}/status', function (\App\Models\Report $report) {
+Route::get('/results/{report}/status', function (\App\Models\Report $report) {
   return response()->json([
     'status' => $report->status,
     'score' => $report->score,
     'started_at' => $report->started_at,
     'finished_at' => $report->finished_at,
   ]);
-});
+})->name('results.status');
 
 /*
 |--------------------------------------------------------------------------

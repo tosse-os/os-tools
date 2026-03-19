@@ -4,13 +4,13 @@
 @php
   use Carbon\Carbon;
 
-  $reportList = collect($reports ?? [])->take(4)->values();
-  $reportSummaries = $reportList->map(function ($report) use ($comparisonModules, $comparisonData) {
+  $resultList = collect($results ?? [])->take(4)->values();
+  $resultSummaries = $resultList->map(function ($result) use ($comparisonModules, $comparisonData) {
     $startedAt = null;
 
-    if (!blank($report->started_at)) {
+    if (!blank($result->started_at)) {
       try {
-        $startedAt = Carbon::parse($report->started_at);
+        $startedAt = Carbon::parse($result->started_at);
       } catch (\Throwable $e) {
         $startedAt = null;
       }
@@ -20,19 +20,19 @@
     $overallMax = 0;
 
     foreach ($comparisonModules as $moduleName) {
-      $module = $comparisonData[$moduleName][$report->id] ?? [];
+      $module = $comparisonData[$moduleName][$result->id] ?? [];
       $overallScore += (int) ($module['score'] ?? 0);
       $overallMax += (int) ($module['max_score'] ?? 0);
     }
 
-    $reportScore = isset($report->score) && is_numeric($report->score) ? (float) $report->score : 0.0;
-    $scoreValue = $overallMax > 0 ? (float) $overallScore : $reportScore;
+    $resultScore = isset($result->score) && is_numeric($result->score) ? (float) $result->score : 0.0;
+    $scoreValue = $overallMax > 0 ? (float) $overallScore : $resultScore;
 
     return [
-      'id' => $report->id,
-      'keyword' => $report->keyword ?: '—',
-      'city' => $report->city ?: '—',
-      'domain' => parse_url((string) ($report->url ?? ''), PHP_URL_HOST) ?: '—',
+      'id' => $result->id,
+      'keyword' => $result->keyword ?: '—',
+      'city' => $result->city ?: '—',
+      'domain' => parse_url((string) ($result->url ?? ''), PHP_URL_HOST) ?: '—',
       'started_at' => $startedAt,
       'score' => $scoreValue,
     ];
@@ -41,17 +41,17 @@
 
 <div class="max-w-7xl mx-auto bg-white shadow-sm rounded-lg p-8 space-y-6 border border-gray-100">
   <div class="flex justify-between items-center gap-3">
-    <h1 class="text-2xl font-semibold">Report Comparison</h1>
+    <h1 class="text-2xl font-semibold">Result Comparison</h1>
     <a href="{{ url()->previous() }}" class="text-sm text-blue-600 hover:underline">Back</a>
   </div>
 
   <div class="flex items-center gap-3 text-sm">
-    <a href="{{ route('reports.compare', array_merge($compareQuery, ['mode' => 'modules'])) }}"
+    <a href="{{ route('results.compare', array_merge($compareQuery, ['mode' => 'modules'])) }}"
       class="rounded-lg px-3 py-1.5 {{ $mode === 'modules' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
       Module Comparison
     </a>
 
-    <a href="{{ route('reports.compare', array_merge($compareQuery, ['mode' => 'delta'])) }}"
+    <a href="{{ route('results.compare', array_merge($compareQuery, ['mode' => 'delta'])) }}"
       class="rounded-lg px-3 py-1.5 {{ $mode === 'delta' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700' }}">
       Score Difference
     </a>
@@ -59,13 +59,13 @@
 
   @if($hasContextMismatch)
     <div class="rounded-lg border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-900">
-      These reports use different keyword or city parameters.<br>
+      These results use different keyword or city parameters.<br>
       Comparison may be misleading.
     </div>
   @endif
 
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-    @foreach($reportSummaries as $summary)
+    @foreach($resultSummaries as $summary)
       <div class="rounded-lg border border-gray-200 p-4 shadow-sm bg-gray-50">
         <div class="font-semibold text-gray-900">{{ $summary['keyword'] }} • {{ $summary['city'] }}</div>
         <div class="text-sm text-gray-700">{{ $summary['domain'] }}</div>

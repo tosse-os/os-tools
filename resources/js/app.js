@@ -16,8 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     //import('./modules/crawler')
   }
 
-  if (page === 'report-show') {
-    //import('./modules/reportShow')
+  if (page === 'result-show') {
+    //import('./modules/resultShow')
   }
 
 })

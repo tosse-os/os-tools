@@ -6,19 +6,19 @@ use App\Models\Analysis;
 
 class AnalysisController extends Controller
 {
-    public function show(Analysis $analysis)
+    public function show(Analysis $localseo)
     {
-        $analysis->load([
+        $localseo->load([
             'project',
-            'reports' => fn($reportQuery) => $reportQuery
+            'reports' => fn($resultQuery) => $resultQuery
                 ->orderByDesc('started_at')
                 ->orderByDesc('created_at'),
         ]);
 
-        if (auth()->check() && $analysis->project?->user_id !== auth()->id()) {
+        if (auth()->check() && $localseo->project?->user_id !== auth()->id()) {
             abort(403);
         }
 
-        return view('analyses.show', compact('analysis'));
+        return view('localseo.show', ['localseo' => $localseo]);
     }
 }
