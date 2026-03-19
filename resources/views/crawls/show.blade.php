@@ -7,7 +7,15 @@
       <h1 class="text-2xl font-semibold">Crawl details</h1>
       <p class="text-sm text-gray-600">{{ $crawl->entry_url }}</p>
     </div>
-    <a href="{{ route('crawler.index') }}" class="text-sm text-blue-600 hover:underline">← Back to Crawls</a>
+    <div class="flex items-center gap-4">
+      <form method="POST" action="{{ route('crawls.rerun', $crawl) }}">
+        @csrf
+        <button type="submit" class="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+          Run Crawl Again
+        </button>
+      </form>
+      <a href="{{ route('crawls.index') }}" class="text-sm text-blue-600 hover:underline">← Back to Crawls</a>
+    </div>
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">

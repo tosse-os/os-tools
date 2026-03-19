@@ -14,13 +14,7 @@ class CrawlerController extends Controller
 {
   public function index()
   {
-    $crawls = Crawl::query()
-      ->orderByDesc('created_at')
-      ->paginate(25);
-
-    return view('crawler.index', [
-      'crawls' => $crawls,
-    ]);
+    return view('crawler.form');
   }
 
   public function run(Request $request)
