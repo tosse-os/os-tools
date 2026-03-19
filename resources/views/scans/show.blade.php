@@ -28,7 +28,7 @@
 
     <div x-show="status === 'failed'" class="mt-3 p-3 rounded bg-red-100 text-red-700 flex items-center justify-between">
       <span>⚠ Scan failed</span>
-      <form action="{{ url('/crawl') }}" method="GET">
+      <form action="{{ url('/crawler') }}" method="GET">
         <button type="submit" class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">
           Retry
         </button>
