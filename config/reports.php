@@ -11,7 +11,7 @@ return [
 
     'crawler' => [
       'label' => 'Crawler',
-      'route' => 'crawl.index',
+      'route' => 'crawler.index',
     ],
 
   ],

@@ -33,11 +33,9 @@ Route::post('/local-seo', [LocalSeoController::class, 'start'])->name('localseo.
 |--------------------------------------------------------------------------
 */
 
-Route::get('/crawl', [CrawlerController::class, 'index'])->name('crawl.index');
-Route::post('/crawl', [CrawlerController::class, 'run'])->name('crawl.run');
-Route::get('/crawls', [CrawlController::class, 'index'])->name('crawls.index');
+Route::get('/crawler', [CrawlerController::class, 'index'])->name('crawler.index');
+Route::post('/crawler', [CrawlerController::class, 'run'])->name('crawler.run');
 Route::get('/crawls/{crawl}', [CrawlController::class, 'show'])->name('crawls.show');
-Route::post('/crawls/{crawl}/rerun', [CrawlController::class, 'rerun'])->name('crawls.rerun');
 
 
 /*
