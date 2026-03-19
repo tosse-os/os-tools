@@ -57,8 +57,8 @@
               Reports
             </a>
 
-            <a href="{{ route('crawler.index') }}"
-              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('crawler.*') || request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+            <a href="{{ route('crawls.index') }}"
+              class="inline-flex items-center rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
               Crawls
             </a>
           </div>
@@ -129,8 +129,8 @@
             class="block rounded-lg px-3 py-2 {{ request()->routeIs('reports.index') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Reports
           </a>
-          <a href="{{ route('crawler.index') }}"
-            class="block rounded-lg px-3 py-2 {{ request()->routeIs('crawler.*') || request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
+          <a href="{{ route('crawls.index') }}"
+            class="block rounded-lg px-3 py-2 {{ request()->routeIs('crawls.*') ? 'bg-orange-100 text-orange-700 font-semibold ring-1 ring-orange-200' : 'text-gray-700 hover:bg-gray-100' }} transition">
             Crawls
           </a>
 

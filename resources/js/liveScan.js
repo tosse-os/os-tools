@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     spinner.classList.remove('hidden');
     abortSection.classList.remove('hidden');
 
-    const res = await fetch('/crawler', {
+    const res = await fetch('/crawl', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
