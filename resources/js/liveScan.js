@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!scanId) return;
 
-    await fetch('/multiscan/abort', {
+    await fetch('/crawler/abort', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

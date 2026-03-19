@@ -24,17 +24,17 @@ class LocalSeoController extends Controller
       'city' => 'required|string'
     ]);
 
-    $analysis = $this->findOrCreateAnalysis(
+    $localseo = $this->findOrCreateLocalSeo(
       auth()->id(),
       $request->url,
       $request->keyword,
       $request->city,
     );
 
-    $report = Report::create([
+    $result = Report::create([
       'id' => (string) Str::uuid(),
       'user_id' => auth()->id(),
-      'analysis_id' => $analysis->id,
+      'analysis_id' => $localseo->id,
       'type' => 'local_seo',
       'url' => $request->url,
       'keyword' => $request->keyword,
@@ -43,17 +43,17 @@ class LocalSeoController extends Controller
     ]);
 
     RunLocalSeo::dispatch(
-      $report->id,
+      $result->id,
       $request->keyword,
       $request->city
     );
 
     return response()->json([
-      'reportId' => $report->id
+      'resultId' => $result->id
     ]);
   }
 
-  private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+  private function findOrCreateLocalSeo(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
   {
     $domain = parse_url($url, PHP_URL_HOST) ?: $url;
 

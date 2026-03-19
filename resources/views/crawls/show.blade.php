@@ -37,12 +37,12 @@
   <div class="rounded border bg-white p-4">
     <h2 class="text-lg font-semibold mb-3">Crawl issue reports</h2>
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-      <div class="rounded border p-2"><strong>Missing ALT text:</strong> {{ $issueReports['missing_alt'] }}</div>
-      <div class="rounded border p-2"><strong>Missing H1:</strong> {{ $issueReports['missing_h1'] }}</div>
-      <div class="rounded border p-2"><strong>Broken links:</strong> {{ $issueReports['broken_links'] }}</div>
-      <div class="rounded border p-2"><strong>Redirect chains:</strong> {{ $issueReports['redirect_chains'] }}</div>
-      <div class="rounded border p-2"><strong>Duplicate pages:</strong> {{ $issueReports['duplicate_pages'] }}</div>
-      <div class="rounded border p-2"><strong>Orphan pages:</strong> {{ $issueReports['orphan_pages'] }}</div>
+      <div class="rounded border p-2"><strong>Missing ALT text:</strong> {{ $issueResults['missing_alt'] }}</div>
+      <div class="rounded border p-2"><strong>Missing H1:</strong> {{ $issueResults['missing_h1'] }}</div>
+      <div class="rounded border p-2"><strong>Broken links:</strong> {{ $issueResults['broken_links'] }}</div>
+      <div class="rounded border p-2"><strong>Redirect chains:</strong> {{ $issueResults['redirect_chains'] }}</div>
+      <div class="rounded border p-2"><strong>Duplicate pages:</strong> {{ $issueResults['duplicate_pages'] }}</div>
+      <div class="rounded border p-2"><strong>Orphan pages:</strong> {{ $issueResults['orphan_pages'] }}</div>
     </div>
   </div>
 
@@ -88,7 +88,7 @@
   </div>
 
   <div class="rounded border bg-white p-4">
-    <h2 class="text-lg font-semibold mb-3">Broken links report</h2>
+    <h2 class="text-lg font-semibold mb-3">Broken links result</h2>
     <div class="space-y-2 text-sm">
       @forelse($brokenLinks as $link)
         <div class="border rounded p-2">
@@ -103,7 +103,7 @@
   </div>
 
   <div class="rounded border bg-white p-4">
-    <h2 class="text-lg font-semibold mb-3">Redirect chains report</h2>
+    <h2 class="text-lg font-semibold mb-3">Redirect chains result</h2>
     <div class="space-y-2 text-sm">
       @forelse($redirectChains as $link)
         <div class="border rounded p-2 {{ $link->redirect_chain_length > 2 ? 'border-amber-500' : '' }}">
@@ -119,7 +119,7 @@
   </div>
 
   <div class="rounded border bg-white p-4">
-    <h2 class="text-lg font-semibold mb-3">Orphan pages report</h2>
+    <h2 class="text-lg font-semibold mb-3">Orphan pages result</h2>
     <div class="space-y-1 text-sm">
       @forelse($orphanPages as $page)
         <div class="border rounded p-2">{{ $page->url }}</div>

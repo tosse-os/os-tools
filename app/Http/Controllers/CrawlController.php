@@ -58,7 +58,7 @@ class CrawlController extends Controller
                 ->pluck('total', 'type');
         }
 
-        $issueReports = [
+        $issueResults = [
             'missing_alt' => (int) ($issuesByType['missing_alt'] ?? $crawl->pages()->where('alt_missing_count', '>', 0)->count()),
             'missing_h1' => (int) ($issuesByType['missing_h1'] ?? $crawl->pages()->where('h1_count', '=', 0)->count()),
             'broken_links' => (int) ($issuesByType['broken_link'] ?? $summary['broken_links']),
@@ -90,7 +90,7 @@ class CrawlController extends Controller
             'crawl' => $crawl,
             'pages' => $pages,
             'summary' => $summary,
-            'issueReports' => $issueReports,
+            'issueResults' => $issueResults,
             'brokenLinks' => $brokenLinks,
             'redirectChains' => $redirectChains,
             'orphanPages' => $orphanPages,
@@ -100,24 +100,24 @@ class CrawlController extends Controller
 
     public function rerun(Crawl $crawl): RedirectResponse
     {
-        $analysis = $this->findOrCreateAnalysis(
+        $localseo = $this->findOrCreateLocalSeo(
             auth()->id(),
             $crawl->entry_url,
             null,
             null,
         );
 
-        $report = Report::create([
+        $result = Report::create([
             'id' => (string) Str::uuid(),
             'user_id' => auth()->id(),
-            'analysis_id' => $analysis->id,
+            'analysis_id' => $localseo->id,
             'type' => 'crawler',
             'url' => $crawl->entry_url,
             'status' => 'queued',
         ]);
 
         Crawl::create([
-            'id' => $report->id,
+            'id' => $result->id,
             'domain' => parse_url($crawl->entry_url, PHP_URL_HOST) ?: $crawl->entry_url,
             'root_url' => $crawl->entry_url,
             'start_url' => $crawl->entry_url,
@@ -127,14 +127,14 @@ class CrawlController extends Controller
             'pages_failed' => 0,
         ]);
 
-        RunCrawl::dispatch($report->id);
+        RunCrawl::dispatch($result->id);
 
         return redirect()
-            ->route('crawls.show', $report->id)
+            ->route('crawls.show', $result->id)
             ->with('status', 'Crawl was queued again.');
     }
 
-    private function findOrCreateAnalysis(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
+    private function findOrCreateLocalSeo(?int $userId, string $url, ?string $keyword, ?string $city): Analysis
     {
         $domain = parse_url($url, PHP_URL_HOST) ?: $url;
 

@@ -16,19 +16,19 @@
   <section class="space-y-4">
     <h2 class="text-lg font-semibold">Analyses</h2>
 
-    @forelse($project->analyses as $analysis)
+    @forelse($project->analyses as $localseo)
       @php
-        $latestReport = $analysis->reports->first();
+        $latestResult = $localseo->reports->first();
       @endphp
 
       <a
-        href="{{ route('analyses.show', $analysis) }}"
+        href="{{ route('localseo.show', $localseo) }}"
         class="block rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <div class="text-lg font-semibold text-gray-900">{{ $analysis->keyword ?: '—' }} • {{ $analysis->city ?: '—' }}</div>
-            <div class="mt-2 text-sm text-gray-700">Score {{ is_numeric($latestReport?->score) ? number_format((float) $latestReport->score, 0) : '—' }}</div>
-            <div class="text-sm text-gray-600">{{ $analysis->reports_count }} Reports</div>
+            <div class="text-lg font-semibold text-gray-900">{{ $localseo->keyword ?: '—' }} • {{ $localseo->city ?: '—' }}</div>
+            <div class="mt-2 text-sm text-gray-700">Score {{ is_numeric($latestResult?->score) ? number_format((float) $latestResult->score, 0) : '—' }}</div>
+            <div class="text-sm text-gray-600">{{ $localseo->reports_count }} Results</div>
           </div>
         </div>
       </a>

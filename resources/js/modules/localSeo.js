@@ -25,8 +25,8 @@ if (!form) {
     const data = await response.json()
     console.log('Antwort:', data)
 
-    if (data.reportId) {
-      window.location.href = `/reports/${data.reportId}`
+    if (data.resultId) {
+      window.location.href = `/results/${data.resultId}`
     }
   })
 }

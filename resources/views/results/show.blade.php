@@ -35,7 +35,7 @@ $internalLinks = is_array($data['internal_links'] ?? null) ? $data['internal_lin
 <div class="max-w-5xl mx-auto bg-white shadow-sm rounded p-8 space-y-10">
 
   <div class="space-y-4">
-    <a href="{{ url('/reports') }}" class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition">
+    <a href="{{ url('/results') }}" class="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 transition">
       ← Zurück zu Reports
     </a>
 
@@ -346,7 +346,7 @@ $internalLinks = is_array($data['internal_links'] ?? null) ? $data['internal_lin
 @section('scripts')
 <script>
   (() => {
-    const reportId = @json($report->id);
+    const resultId = @json($report->id);
     let pollTimer = null;
 
     const normalizeStatus = (status) => {
@@ -358,7 +358,7 @@ $internalLinks = is_array($data['internal_links'] ?? null) ? $data['internal_lin
 
     const pollStatus = async () => {
       try {
-        const response = await fetch(`/reports/${reportId}/status`, {
+        const response = await fetch(`/results/${resultId}/status`, {
           headers: {
             'X-Requested-With': 'XMLHttpRequest',
             'Accept': 'application/json',
@@ -423,7 +423,7 @@ $internalLinks = is_array($data['internal_links'] ?? null) ? $data['internal_lin
           x: {
             title: {
               display: true,
-              text: 'Scan Date',
+              text: 'Result Date',
             },
           },
           y: {

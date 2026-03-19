@@ -25,10 +25,10 @@ class ReportController extends Controller
       ->limit(60)
       ->get();
 
-    $reportContexts = $this->buildReportContexts($reports);
+    $resultContexts = $this->buildReportContexts($reports);
 
-    return view('reports.index', [
-      'reportContexts' => $reportContexts,
+    return view('results.index', [
+      'resultContexts' => $resultContexts,
       'filters' => $this->extractFilters($request),
     ]);
   }
@@ -48,10 +48,10 @@ class ReportController extends Controller
       ->latest()
       ->get();
 
-    $reportContexts = $this->buildReportContexts($reports);
+    $resultContexts = $this->buildReportContexts($reports);
 
-    return view('reports.archive', [
-      'reportContexts' => $reportContexts,
+    return view('results.archive', [
+      'resultContexts' => $resultContexts,
       'filters' => $this->extractFilters($request),
     ]);
   }
@@ -238,7 +238,7 @@ class ReportController extends Controller
       ];
     }
 
-    return view('reports.show', [
+    return view('results.show', [
       'report' => $report,
       'timeline' => $timeline,
       'regression' => $regression,
@@ -253,20 +253,20 @@ class ReportController extends Controller
 
   public function compare(Request $request)
   {
-    $ids = collect($request->input('reports', []))
+    $ids = collect($request->input('results', []))
       ->filter()
       ->unique()
       ->values();
 
     if ($ids->count() < 2) {
       return redirect()->back()->withErrors([
-        'reports' => 'Bitte mindestens 2 Reports für den Vergleich auswählen.',
+        'results' => 'Bitte mindestens 2 Results für den Vergleich auswählen.',
       ])->withInput();
     }
 
     if ($ids->count() > 4) {
       return redirect()->back()->withErrors([
-        'reports' => 'Bitte maximal 4 Reports für den Vergleich auswählen.',
+        'results' => 'Bitte maximal 4 Results für den Vergleich auswählen.',
       ])->withInput();
     }
 
@@ -278,7 +278,7 @@ class ReportController extends Controller
 
     if ($reports->count() !== $ids->count()) {
       return redirect()->back()->withErrors([
-        'reports' => 'Mindestens ein ausgewählter Report wurde nicht gefunden.',
+        'results' => 'Mindestens ein ausgewähltes Result wurde nicht gefunden.',
       ])->withInput();
     }
 
@@ -407,13 +407,13 @@ class ReportController extends Controller
       ->filter(fn($row) => $row['delta'] !== null && $row['delta'] != 0)
       ->values();
 
-    return view('reports.compare', [
-      'reports' => $reports,
+    return view('results.compare', [
+      'results' => $reports,
       'comparisonModules' => $comparisonModules,
       'comparisonData' => $comparisonData,
       'scoreDifferences' => $scoreDifferences,
       'mode' => $mode,
-      'compareQuery' => ['reports' => $reports->pluck('id')->all()],
+      'compareQuery' => ['results' => $reports->pluck('id')->all()],
       'hasContextMismatch' => $contextKeys->count() > 1,
       'baseReport' => $baseReport,
       'comparisonReport' => $comparisonReport,
@@ -494,10 +494,10 @@ class ReportController extends Controller
           'city' => $this->valueOrDash(optional($latestReport)->city),
           'domain' => $this->extractDomain(optional($latestReport)->url),
           'url' => optional($latestReport)->url,
-          'reports_count' => $contextReports->count(),
+          'results_count' => $contextReports->count(),
           'last_score' => is_numeric(optional($latestReport)->score) ? (float) $latestReport->score : null,
           'latest_started_at' => optional($latestReport)->started_at,
-          'reports' => $contextReports->values(),
+          'results' => $contextReports->values(),
         ];
       })
       ->sortByDesc(function ($group) {

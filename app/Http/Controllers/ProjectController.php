@@ -11,7 +11,7 @@ class ProjectController extends Controller
         $query = Project::query()
             ->withCount('analyses')
             ->with([
-                'analyses.reports' => fn($reportQuery) => $reportQuery
+                'analyses.reports' => fn($resultQuery) => $resultQuery
                     ->select('id', 'analysis_id', 'started_at')
                     ->orderByDesc('started_at'),
             ])
@@ -33,10 +33,10 @@ class ProjectController extends Controller
         }
 
         $project->load([
-            'analyses' => fn($analysisQuery) => $analysisQuery
+            'analyses' => fn($localseoQuery) => $localseoQuery
                 ->withCount('reports')
                 ->with([
-                    'reports' => fn($reportQuery) => $reportQuery
+                    'reports' => fn($resultQuery) => $resultQuery
                         ->select('id', 'analysis_id', 'score', 'started_at')
                         ->orderByDesc('started_at'),
                 ])

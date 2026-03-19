@@ -16,8 +16,8 @@
   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
     @forelse($projects as $project)
       @php
-        $latestScan = $project->analyses
-          ->flatMap(fn($analysis) => $analysis->reports)
+        $latestResult = $project->analyses
+          ->flatMap(fn($localseo) => $localseo->reports)
           ->pluck('started_at')
           ->filter()
           ->max();
@@ -31,7 +31,7 @@
 
         <div class="mt-4 space-y-1 text-sm text-gray-700">
           <div>{{ $project->analyses_count }} Analyses</div>
-          <div>Last Scan: {{ $latestScan ? \Carbon\Carbon::parse($latestScan)->format('d M Y') : '—' }}</div>
+          <div>Last Result: {{ $latestResult ? \Carbon\Carbon::parse($latestResult)->format('d M Y') : '—' }}</div>
         </div>
       </a>
     @empty
